@@ -1,23 +1,26 @@
 use std::fmt::Write as _;
 
+#[derive(Debug)]
 pub struct Contract {
     pub version: String,
     pub limits: Limits,
     pub rulings: Vec<Ruling>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct Limits {
     pub max_coordinate: u32,
     pub max_instructions: u32,
 }
 
+#[derive(Debug)]
 pub struct Ruling {
     pub id: String,
     pub question: String,
     pub decision: Decision,
 }
 
+#[derive(Debug)]
 pub enum Decision {
     Ruled {
         ruling: String,
@@ -65,10 +68,14 @@ mod raw {
 
 impl Contract {
     pub fn load() -> Result<Self, String> {
+        Self::parse(LIMITS, RULINGS)
+    }
+
+    fn parse(limits: &str, rulings: &str) -> Result<Self, String> {
         let limits: raw::Limits =
-            toml::from_str(LIMITS).map_err(|error| format!("contract/limits.toml: {error}"))?;
+            toml::from_str(limits).map_err(|error| format!("contract/limits.toml: {error}"))?;
         let rulings: raw::Rulings =
-            toml::from_str(RULINGS).map_err(|error| format!("contract/rulings.toml: {error}"))?;
+            toml::from_str(rulings).map_err(|error| format!("contract/rulings.toml: {error}"))?;
 
         let mut seen = Vec::new();
         let mut parsed = Vec::with_capacity(rulings.ruling.len());
@@ -117,9 +124,13 @@ impl Contract {
     }
 
     pub fn render(&self) -> Result<String, String> {
-        let body = TEMPLATE
+        self.render_with(TEMPLATE, GRAMMAR)
+    }
+
+    fn render_with(&self, template: &str, grammar: &str) -> Result<String, String> {
+        let body = template
             .split_once("-->\n")
-            .map_or(TEMPLATE, |(_, rest)| rest);
+            .map_or(template, |(_, rest)| rest);
 
         let rendered = body
             .replace("{{version}}", &self.version)
@@ -131,7 +142,7 @@ impl Contract {
                 "{{max_instructions}}",
                 &self.limits.max_instructions.to_string(),
             )
-            .replace("{{grammar}}", &grammar_block())
+            .replace("{{grammar}}", &grammar_block(grammar))
             .replace("{{rulings}}", &self.rulings_table())
             .replace("{{open_questions}}", &self.open_questions());
 
@@ -174,7 +185,117 @@ impl Contract {
     }
 }
 
-fn grammar_block() -> String {
-    let productions = GRAMMAR.split_once("*)\n").map_or(GRAMMAR, |(_, rest)| rest);
+fn grammar_block(grammar: &str) -> String {
+    let productions = grammar.split_once("*)\n").map_or(grammar, |(_, rest)| rest);
     format!("```ebnf\n{}\n```", productions.trim())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Contract, Decision};
+
+    const LIMITS: &str =
+        "version = \"1.0.0\"\n[limits]\nmax_coordinate = 1\nmax_instructions = 1\n";
+
+    fn ruled(id: &str) -> String {
+        format!(
+            "[[ruling]]\nid = \"{id}\"\nstatus = \"ruled\"\nquestion = \"q\"\nruling = \"r\"\n\n"
+        )
+    }
+
+    fn open(id: &str) -> String {
+        format!("[[ruling]]\nid = \"{id}\"\nstatus = \"open\"\nquestion = \"q\"\nnote = \"n\"\n\n")
+    }
+
+    #[test]
+    fn the_shipped_contract_loads_and_renders() {
+        let contract = Contract::load().expect("the contract this suite ships must load");
+        contract
+            .render()
+            .expect("the contract this suite ships must render");
+    }
+
+    #[test]
+    fn every_question_reaches_the_rendered_document() {
+        let contract = Contract::load().unwrap();
+        let document = contract.render().unwrap();
+        for ruling in &contract.rulings {
+            assert!(
+                document.contains(&ruling.id),
+                "{} is in the contract but not in the document it renders",
+                ruling.id
+            );
+        }
+    }
+
+    #[test]
+    fn open_questions_stay_out_of_the_rulings_table() {
+        let contract = Contract::load().unwrap();
+        let table = contract.rulings_table();
+        for ruling in &contract.rulings {
+            if matches!(ruling.decision, Decision::Open { .. }) {
+                assert!(
+                    !table.contains(&format!("| {} |", ruling.id)),
+                    "{} is open and must not appear as a ruling",
+                    ruling.id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_ruled_question_needs_a_ruling() {
+        let entries = "[[ruling]]\nid = \"R1\"\nstatus = \"ruled\"\nquestion = \"q\"\n";
+        let error = Contract::parse(LIMITS, entries).unwrap_err();
+        assert!(error.contains("R1"), "{error}");
+        assert!(error.contains("no ruling"), "{error}");
+    }
+
+    #[test]
+    fn an_open_question_needs_a_note() {
+        let entries = "[[ruling]]\nid = \"Q1\"\nstatus = \"open\"\nquestion = \"q\"\n";
+        let error = Contract::parse(LIMITS, entries).unwrap_err();
+        assert!(error.contains("Q1"), "{error}");
+        assert!(error.contains("no note"), "{error}");
+    }
+
+    #[test]
+    fn a_status_is_ruled_or_open_and_nothing_else() {
+        let entries = "[[ruling]]\nid = \"R1\"\nstatus = \"maybe\"\nquestion = \"q\"\n";
+        let error = Contract::parse(LIMITS, entries).unwrap_err();
+        assert!(error.contains("R1"), "{error}");
+        assert!(error.contains("maybe"), "{error}");
+    }
+
+    #[test]
+    fn an_id_cannot_be_used_twice() {
+        let entries = format!("{}{}", ruled("R1"), ruled("R1"));
+        let error = Contract::parse(LIMITS, &entries).unwrap_err();
+        assert!(error.contains("R1"), "{error}");
+        assert!(error.contains("twice"), "{error}");
+    }
+
+    #[test]
+    fn a_hole_nothing_fills_is_refused() {
+        let contract = Contract::parse(LIMITS, &format!("{}{}", ruled("R1"), open("Q1"))).unwrap();
+        let error = contract
+            .render_with("-->\n{{rulings}} {{nonexistent}}\n", "*)\nx = \"y\" ;\n")
+            .unwrap_err();
+        assert!(error.contains("{{nonexistent}}"), "{error}");
+    }
+
+    #[test]
+    fn a_contract_with_no_holes_renders_its_data() {
+        let contract = Contract::parse(LIMITS, &format!("{}{}", ruled("R1"), open("Q1"))).unwrap();
+        let document = contract
+            .render_with(
+                "-->\n{{version}} {{max_coordinate}} {{max_instructions}}\n{{grammar}}\n{{rulings}}\n{{open_questions}}\n",
+                "*)\nx = \"y\" ;\n",
+            )
+            .unwrap();
+        assert!(document.contains("1.0.0"), "{document}");
+        assert!(document.contains("R1"), "{document}");
+        assert!(document.contains("Q1"), "{document}");
+        assert!(document.contains("x = \"y\" ;"), "{document}");
+    }
 }
