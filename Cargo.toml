@@ -1,0 +1,23 @@
+[package]
+name = "martian-robots-verify"
+version = "0.1.0"
+description = "The Martian Robots CLI contract, and the suite that enforces it"
+edition = "2024"
+rust-version = "1.93"
+license = "MIT"
+repository = "https://github.com/erinversfeldcodes/martian-robots-tests"
+
+[[bin]]
+name = "martian-robots-verify"
+path = "src/main.rs"
+
+# The contract is TOML, so the suite parses TOML. Everything else it needs -
+# running a process, comparing bytes - the standard library already provides,
+# and a dependency here would have to earn its place by making the grading
+# better rather than the code shorter.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "0.9"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }

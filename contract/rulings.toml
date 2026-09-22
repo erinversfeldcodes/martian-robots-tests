@@ -1,0 +1,213 @@
+# Every question the brief leaves open and what was decided.
+#
+# `status = "ruled"` means the answer is contract and ready for
+# implementation in tests and in features.
+# `status = "open"` means it is undecided: a suite may not test it, an
+# implementation may experimentally answer it however it likes.
+#
+# Ruled questions are R-numbered and cited by the cases that enforce them.
+# Open questions are Q-numbered and cited by nothing.
+
+[[ruling]]
+id = "R1"
+status = "ruled"
+question = "Robot's initial position off-grid?"
+ruling = "Invalid input."
+rationale = "Validation happens at the boundary; the simulation never sees an off-grid robot."
+
+[[ruling]]
+id = "R2"
+status = "ruled"
+question = "Empty instruction line?"
+ruling = "Valid: zero instructions."
+rationale = "The robot reports its initial state."
+
+[[ruling]]
+id = "R3"
+status = "ruled"
+question = "Grid line `0 0`?"
+ruling = "Valid: a 1x1 world consisting of cell (0,0)."
+
+[[ruling]]
+id = "R4"
+status = "ruled"
+question = "Whitespace tolerance?"
+ruling = "Runs of spaces and tabs separate tokens; leading and trailing whitespace on a line is ignored; blank lines between robot blocks are ignored."
+rationale = "The brief's own sample input contains blank lines between blocks."
+
+[[ruling]]
+id = "R5"
+status = "ruled"
+question = "Coordinate greater than the maximum, in the grid line or a position line?"
+ruling = "Invalid input."
+
+[[ruling]]
+id = "R6"
+status = "ruled"
+question = "Instruction string longer than the maximum?"
+ruling = "Invalid input."
+rationale = "The brief says instruction strings are less than 100 characters, so 99 is the longest valid one."
+
+[[ruling]]
+id = "R7"
+status = "ruled"
+question = "Characters outside `L R F` in an instruction string, or outside `N S E W` as an orientation?"
+ruling = "Invalid input, lowercase included."
+rationale = "The vocabulary is strict-uppercase until a future command type says otherwise."
+
+[[ruling]]
+id = "R8"
+status = "ruled"
+question = "Zero robots - a grid line and nothing else?"
+ruling = "Valid: empty stdout, exit 0."
+
+[[ruling]]
+id = "R9"
+status = "ruled"
+question = "Scent: cell-based or direction-based? May a robot at a scented corner cell fall off a *different* edge than the robot that scented it?"
+ruling = "Cell-based: any `F` that would leave the world from a scented cell is ignored, whatever the direction."
+rationale = "The brief says a scent prohibits future robots from dropping off the world at the same grid *point*, which names a point, not a heading. The brief's own sample cannot distinguish the two readings - the ignored move in the third robot's run happens to face the same way the second robot was lost - so a direction-based implementation passes the published example and fails at a corner."
+
+[[ruling]]
+id = "R10"
+status = "ruled"
+question = "Multiple robots lost from the same cell?"
+ruling = "Idempotent: the cell is scented once, and re-scenting has no additional effect."
+
+[[ruling]]
+id = "R11"
+status = "ruled"
+question = "Line endings?"
+ruling = "Accept LF and CRLF on input; emit LF only."
+
+[[ruling]]
+id = "R12"
+status = "ruled"
+question = "Duplicate or extra tokens on a line, such as `1 1 E X`?"
+ruling = "Invalid input: lines must match the grammar exactly once whitespace is normalised."
+
+[[ruling]]
+id = "R13"
+status = "ruled"
+question = "Missing instruction line after a position line - end of input mid-block?"
+ruling = "Invalid input."
+
+[[ruling]]
+id = "R14"
+status = "ruled"
+question = "Input ends without a final newline?"
+ruling = "Valid: end-of-file acts as an implicit end-of-line."
+
+[[ruling]]
+id = "R15"
+status = "ruled"
+question = "What is a blank line?"
+ruling = "`ows , eol` - a line containing only whitespace counts as blank."
+
+[[ruling]]
+id = "R16"
+status = "ruled"
+question = "Leading zeros in input; number format on output?"
+ruling = "Input: grammatical, interpreted as a decimal value, so `05` is 5. Output: canonical decimal, no leading zeros, no signs."
+
+[[ruling]]
+id = "R17"
+status = "ruled"
+question = "Blank lines before the grid line?"
+ruling = "Accepted and ignored, consistent with R4's liberal framing."
+
+[[ruling]]
+id = "R18"
+status = "ruled"
+question = "Does R14's implicit end-of-line create a phantom blank line after a terminated final line?"
+ruling = "No: it applies only to a non-empty, unterminated final line."
+rationale = "A terminated input gains nothing, and R13 stands."
+
+[[ruling]]
+id = "R19"
+status = "ruled"
+question = "A bare CR at the end of the input?"
+ruling = "Read as half a CRLF completed by the implicit end-of-line, but only when it terminates a non-empty line. A lone CR forming an empty line is invalid, as is a CR not followed by LF anywhere else."
+rationale = "Without the guard, one invisible byte turns an R13 rejection into an accepted mission by manufacturing an empty instruction line, which R18 forbids."
+
+[[ruling]]
+id = "R20"
+status = "ruled"
+question = "`--help`?"
+ruling = "A real help surface: `--help` or `-h` prints usage to stdout, exits 0, and leaves stdin unread."
+rationale = "Silently ignoring argv is not acceptable - it leaves `--help` hanging on a terminal waiting for input."
+
+[[ruling]]
+id = "R21"
+status = "ruled"
+question = "Other arguments?"
+ruling = "Usage error: a brief message to stderr, a non-zero exit, no stdout, stdin unread."
+
+[[ruling]]
+id = "R22"
+status = "ruled"
+question = "Non-UTF-8 stdin?"
+ruling = "Invalid input."
+rationale = "The contract's text is ASCII; bytes that are not valid UTF-8 cannot be contract input."
+
+[[ruling]]
+id = "R23"
+status = "ruled"
+question = "What does scent do besides blocking world-leaving moves? Does a robot placed on a scented cell, or one that merely passes through, behave differently?"
+ruling = "Nothing else. Entering, crossing, or starting on a scented cell is unremarkable, and scent never rejects input."
+rationale = "Protection is by occupancy, not provenance: however a robot came to stand on a scented cell, its world-leaving `F` is ignored."
+
+[[ruling]]
+id = "R24"
+status = "ruled"
+question = "`--help` or `-h` together with another argument?"
+ruling = "Usage error, per R21: a help flag prints help only when it is the sole argument."
+
+[[ruling]]
+id = "R25"
+status = "ruled"
+question = "How many diagnostics must a rejection carry?"
+ruling = "Every violation found in one pass: each line that breaks a rule on its own is diagnosed, whatever is wrong with the other lines."
+rationale = "The unit is the line, so one diagnostic for an offending line satisfies this however many rules that line breaks. A violation that can only be judged against another, invalid line - an off-grid start measured against an unreadable grid line - need not be reported."
+
+[[ruling]]
+id = "Q1"
+status = "open"
+question = "Mixed LF and CRLF within one input?"
+note = "R11 accepts both; whether a single input may use each on different lines is unstated."
+
+[[ruling]]
+id = "Q2"
+status = "open"
+question = "Output on stderr for valid input?"
+note = "Nothing forbids it and nothing requires it. A suite should ignore stderr when the exit code is 0."
+
+[[ruling]]
+id = "Q3"
+status = "open"
+question = "Crashes and hangs?"
+note = "How a grader treats a candidate that panics or never terminates is a policy for the grader, not an obligation of this contract."
+
+[[ruling]]
+id = "Q4"
+status = "open"
+question = "An unterminated final line of only whitespace?"
+note = "R14's letter admits it - a non-empty final line gains an implicit end-of-line - while the principle that implicit endings never create content would refuse it. The two disagree: one trailing space can turn an R13 rejection into an accepted mission. R19's guard closed exactly this flip for a carriage return; this one is open."
+
+[[ruling]]
+id = "Q5"
+status = "open"
+question = "Which ruling owns a token of the right count and the wrong width?"
+note = "A position line ending `1 1 EE` has three tokens, so R12's \"exactly x y orientation\" and R7's \"EE is not an orientation\" both fit. It is rejected either way; which ruling it cites is unstated."
+
+[[ruling]]
+id = "Q6"
+status = "open"
+question = "Whitespace that is neither a space nor a tab?"
+note = "R4 names spaces and tabs as the only separators, so a non-breaking space inside a line is not a separator and the line is invalid. Whether the diagnostic should treat it as a bad separator or as an unknown character is unstated."
+
+[[ruling]]
+id = "Q7"
+status = "open"
+question = "Additional command types?"
+note = "The brief asks that provision be made for them. That is a structural obligation on the implementation - adding one should be a small, local change - and this contract deliberately does not speculate about their syntax."
