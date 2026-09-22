@@ -65,9 +65,243 @@ impl Builder {
 pub fn catalogue(contract: &Contract) -> Vec<Case> {
     let mut build = Builder { cases: Vec::new() };
     missions(&mut build, contract);
+    scent(&mut build);
+    whitespace(&mut build);
+    vocabulary(&mut build);
+    framing(&mut build);
+    diagnostics(&mut build, contract);
+    bytes(&mut build);
     boundaries(&mut build, contract);
     invocation(&mut build);
     build.cases
+}
+
+fn scent(build: &mut Builder) {
+    build.case(
+        "a scent blocks a departure by a different edge",
+        &["R9"],
+        "the discriminator the brief's own sample cannot be: robot one is lost \
+         north from a corner, robot two tries to leave the same cell going \
+         east. Cell-based scent saves it; direction-based scent does not, and \
+         passes every other case in this suite",
+        "1 1\n1 1 N\nF\n1 1 E\nF\n",
+        Expect::Output(b"1 1 N LOST\n1 1 E\n".to_vec()),
+    );
+
+    build.case(
+        "a scent is not used up by the robot it saves",
+        &["R10"],
+        "two later robots attempt the same fatal move from the same cell; the \
+         cell is scented once and protects both",
+        "1 1\n1 1 N\nF\n1 1 N\nF\n1 1 N\nF\n",
+        Expect::Output(b"1 1 N LOST\n1 1 N\n1 1 N\n".to_vec()),
+    );
+
+    build.case(
+        "a scent marks the cell and never the robot",
+        &["R23"],
+        "robot two starts on the scented cell, walks off it unharmed, and is \
+         still lost at an edge that carries no scent. Protection is occupancy, \
+         not a property the robot keeps",
+        "2 0\n0 0 W\nF\n0 0 E\nFFF\n",
+        Expect::Output(b"0 0 W LOST\n2 0 E LOST\n".to_vec()),
+    );
+}
+
+fn whitespace(build: &mut Builder) {
+    build.case(
+        "every legal spelling of the separators is accepted",
+        &["R4"],
+        "tabs, runs, mixed runs, and whitespace at both edges of every line - \
+         the positive control without which the rejections below would be \
+         satisfied by a program that refuses all unusual whitespace",
+        "\t5  \t3 \n \t1\t1\tE  \n RFRFRFRF \t\n",
+        Expect::Output(b"1 1 E\n".to_vec()),
+    );
+
+    build.case(
+        "a form feed is not a separator",
+        &["R4", "R12"],
+        "R4 names spaces and tabs and nothing else, but almost every runtime's \
+         default whitespace split accepts this. One character from a valid \
+         mission; replacing it with a space restores one",
+        "5\x0c3\n1 1 E\nRFRFRFRF\n",
+        Expect::Rejection(Diagnostic::at_line(1, &["R4", "R12"])),
+    );
+
+    build.case(
+        "a no-break space inside a legal run is not a separator",
+        &["R4", "R12"],
+        "hidden inside spaces a trim-and-split parser would accept, which is \
+         where such a parser blames the legal space beside it",
+        "5 3\n1\u{a0} 1 E\nRFRFRFRF\n",
+        Expect::Rejection(Diagnostic::at_line(2, &["R4", "R12"])),
+    );
+
+    build.case(
+        "a vertical tab at the end of an instruction line is not whitespace",
+        &["R4", "R12", "R7"],
+        "the trailing edge, where `ows` makes real whitespace invisible. \
+         Q6 leaves open whether this reads as a bad separator or an unknown \
+         instruction, so either ruling satisfies the diagnostic",
+        "5 3\n1 1 E\nRFRFRFRF\x0b\n",
+        Expect::Rejection(Diagnostic::at_line(3, &["R4", "R12", "R7"])),
+    );
+}
+
+fn vocabulary(build: &mut Builder) {
+    build.case(
+        "an orientation of the right token count and the wrong width",
+        &["R12", "R7"],
+        "three tokens, so a parser that counts tokens and reads the first \
+         character of the third accepts it. Q5 leaves open which ruling owns \
+         this, so either satisfies the diagnostic",
+        "5 3\n1 1 EE\nRFRFRFRF\n",
+        Expect::Rejection(Diagnostic::at_line(2, &["R12", "R7"])),
+    );
+
+    build.case(
+        "a coordinate with a letter glued to it",
+        &["R12"],
+        "an atoi-style parser reads the digits and discards the tail, which is \
+         how a plausible wrong acceptance happens",
+        "5x 3\n1 1 E\nRFRFRFRF\n",
+        Expect::Rejection(Diagnostic::at_line(1, &["R12"])),
+    );
+
+    build.case(
+        "an extra token on a position line",
+        &["R12"],
+        "the line must match the grammar exactly once whitespace is normalised",
+        "5 3\n1 1 E X\nRFRFRFRF\n",
+        Expect::Rejection(Diagnostic::at_line(2, &["R12"])),
+    );
+
+    build.case(
+        "a lowercase orientation is not an orientation",
+        &["R7", "R12"],
+        "the vocabulary is strict-uppercase until a future command type says \
+         otherwise",
+        "5 3\n1 1 e\nRFRFRFRF\n",
+        Expect::Rejection(Diagnostic::at_line(2, &["R7", "R12"])),
+    );
+
+    build.case(
+        "a letter outside the instruction vocabulary",
+        &["R7", "R12"],
+        "one character that is not L, R or F",
+        "5 3\n1 1 E\nRFXRF\n",
+        Expect::Rejection(Diagnostic::at_line(3, &["R7", "R12"])),
+    );
+
+    build.case(
+        "leading zeros are a spelling, not a different number",
+        &["R16"],
+        "accepted on input, and never echoed back: output numbers are canonical",
+        "05 03\n01 01 E\nRFRFRFRF\n",
+        Expect::Output(b"1 1 E\n".to_vec()),
+    );
+}
+
+fn framing(build: &mut Builder) {
+    build.case(
+        "blank and whitespace-only lines before the grid line are ignored",
+        &["R17", "R15"],
+        "a line of only whitespace counts as blank, and blanks are admitted \
+         ahead of the grid line as well as between blocks",
+        "   \n\n5 3\n1 1 E\nRFRFRFRF\n",
+        Expect::Output(b"1 1 E\n".to_vec()),
+    );
+
+    build.case(
+        "an unterminated final line is a line",
+        &["R14"],
+        "end of input acts as an implicit end-of-line",
+        "5 3\n1 1 E\nRFRFRFRF",
+        Expect::Output(b"1 1 E\n".to_vec()),
+    );
+
+    build.case(
+        "carriage returns are accepted on input and never emitted",
+        &["R11"],
+        "CRLF in, LF out",
+        "5 3\r\n1 1 E\r\nRFRFRFRF\r\n",
+        Expect::Output(b"1 1 E\n".to_vec()),
+    );
+
+    build.case(
+        "a bare carriage return completes a non-empty final line",
+        &["R19"],
+        "half a CRLF, completed by the implicit end-of-line",
+        "5 3\n1 1 E\nRFRFRFRF\r",
+        Expect::Output(b"1 1 E\n".to_vec()),
+    );
+
+    build.case(
+        "a position line with no instruction line after it is refused",
+        &["R13", "R18"],
+        "the implicit end-of-line does not manufacture the blank line that \
+         would make this a robot with no instructions - R18 is what keeps R13 \
+         standing, and the diagnostic anchors to the position line",
+        "5 3\n1 1 E\n",
+        Expect::Rejection(Diagnostic::at_line(2, &["R13"])),
+    );
+
+    build.case(
+        "a lone carriage return may not manufacture an instruction line",
+        &["R19"],
+        "the guard: without it one invisible byte turns this rejection into an \
+         accepted mission. Which line carries the defect is contestable, so \
+         only the ruling is required",
+        "5 3\n1 1 E\n\r",
+        Expect::Rejection(Diagnostic::tagged(&["R19", "R13"])),
+    );
+
+    build.case(
+        "a carriage return that is not part of a line ending is refused",
+        &["R19", "R11"],
+        "a CR not followed by LF, in the middle of the input",
+        "5 3\r1 1 E\nRFRFRFRF\n",
+        Expect::Rejection(Diagnostic::tagged(&["R19", "R11", "R12"])),
+    );
+}
+
+fn diagnostics(build: &mut Builder, contract: &Contract) {
+    let over = contract.limits.max_coordinate + 1;
+    build.case(
+        "independent problems in different blocks are all reported",
+        &["R25"],
+        "one pass, not one diagnostic: each line that breaks a rule on its own \
+         is diagnosed, whatever is wrong elsewhere. A program that stops at \
+         its first problem is the only thing this case catches",
+        format!("5 3\n1 1 e\n\n\n{over} 1 E\n\n"),
+        Expect::Rejection(Diagnostic {
+            required: vec!["line 2".to_string(), "line 5".to_string()],
+            any_of: Vec::new(),
+            forbids_a_line_reference: false,
+        }),
+    );
+}
+
+fn bytes(build: &mut Builder) {
+    build.case(
+        "a byte that cannot begin a character is not contract input",
+        &["R22"],
+        "a lone continuation byte on an instruction line. The contract's text \
+         is ASCII, so this is invalid input rather than a decoding problem to \
+         paper over",
+        b"5 3\n1 1 E\nRF\x80\n".to_vec(),
+        Expect::Rejection(Diagnostic::at_line(3, &["R22"])),
+    );
+
+    build.case(
+        "a truncated character at end of input is not contract input",
+        &["R22"],
+        "the first byte of a multi-byte sequence with nothing following it, \
+         which a lossy decoder silently replaces",
+        b"5 3\n1 1 E\nRFRFRFRF\xc3".to_vec(),
+        Expect::Rejection(Diagnostic::tagged(&["R22"])),
+    );
 }
 
 fn missions(build: &mut Builder, _contract: &Contract) {

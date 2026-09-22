@@ -48,6 +48,17 @@ impl Diagnostic {
         }
     }
 
+    /// A rejection whose governing ruling is clear but whose line is
+    /// contestable — two framing rules can disagree about which physical line
+    /// carries the defect, and §2.5 does not settle it.
+    pub fn tagged(tags: &[&str]) -> Self {
+        Self {
+            required: Vec::new(),
+            any_of: tags.iter().map(|tag| format!("({tag})")).collect(),
+            forbids_a_line_reference: false,
+        }
+    }
+
     /// A violation with no attributable line: §2.5 says it carries no line
     /// reference, so naming one is wrong rather than merely unhelpful.
     pub fn without_a_line(tags: &[&str]) -> Self {
