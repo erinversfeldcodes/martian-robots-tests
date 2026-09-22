@@ -69,9 +69,17 @@ impl Report {
 }
 
 fn grade(implementation: &Path) -> Report {
+    grade_with(implementation, &["--spelling", "0"])
+}
+
+/// Graded with the generated modes turned down, unless a test is about them:
+/// a case-level assertion should not depend on what a generator happened to
+/// draw.
+fn grade_with(implementation: &Path, extra: &[&str]) -> Report {
     let output = Command::new(env!("CARGO_BIN_EXE_martian-robots-verify"))
         .arg("--bin")
         .arg(implementation)
+        .args(extra)
         .output()
         .expect("to run the suite");
     Report {
@@ -179,4 +187,36 @@ fn a_failing_run_says_so_in_its_exit_code() {
     let fixtures = Fixtures::new("exit-code");
     let implementation = fixtures.implementation("nothing", "cat > /dev/null\nexit 0");
     assert!(!grade(&implementation).conformed);
+}
+
+#[test]
+fn an_implementation_that_understands_only_one_spelling_is_caught() {
+    let fixtures = Fixtures::new("one-spelling");
+    // Answers every mission the same way — but refuses any input containing a
+    // tab. Self-consistent on canonical input, so nothing in the catalogue
+    // built from hand-chosen spellings would notice; it disagrees with itself
+    // the moment the same mission is written another legal way.
+    let implementation = fixtures.implementation(
+        "one-spelling",
+        "input=$(cat)\ncase \"$input\" in\n  *\"$(printf '\\t')\"*) printf 'line 1: no (R4)\\n' >&2; exit 1 ;;\nesac\nexit 0",
+    );
+
+    let report = grade_with(&implementation, &["--spelling", "40", "--seed", "1"]);
+    assert!(
+        report.stdout.contains("DIVERGES"),
+        "a spelling-sensitive implementation must diverge from itself:\n{}",
+        report.stdout
+    );
+    assert!(!report.conformed);
+}
+
+#[test]
+fn a_seed_names_the_same_corpus_twice() {
+    let fixtures = Fixtures::new("seeded");
+    let implementation = fixtures.implementation("quiet", "cat > /dev/null\nexit 0");
+
+    let once = grade_with(&implementation, &["--spelling", "10", "--seed", "7"]);
+    let again = grade_with(&implementation, &["--spelling", "10", "--seed", "7"]);
+    assert_eq!(once.stdout, again.stdout, "a seeded run must be replayable");
+    assert!(once.stdout.contains("seed 7"), "{}", once.stdout);
 }

@@ -1,7 +1,11 @@
 mod cases;
 mod contract;
 mod expect;
+mod mission;
+mod modes;
+mod rng;
 mod run;
+mod spelling;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -14,7 +18,10 @@ Usage: martian-robots-verify --bin <path> [--quiet]
        martian-robots-verify --contract
 
   --bin <path>   the implementation under test
-  --quiet        report only the result line, not each case
+  --quiet        report only failures and the result lines
+  --spelling <n> missions to render several legal ways (default 60)
+  --seed <n>     the seed the generated missions come from, so a failure
+                 replays; a run without one picks and prints its own
   --contract     write the contract to stdout, as one document
   -h, --help     print this message and exit
 
@@ -31,6 +38,7 @@ enum Task {
     Grade {
         implementation: PathBuf,
         quiet: bool,
+        budget: modes::Budget,
     },
     Show,
     Help,
@@ -41,6 +49,8 @@ impl Task {
         let mut args = args;
         let mut implementation = None;
         let mut quiet = false;
+        let mut missions = 60;
+        let mut seed = None;
 
         while let Some(argument) = args.next() {
             match argument.as_str() {
@@ -51,6 +61,8 @@ impl Task {
                     let path = args.next().ok_or("--bin needs a path")?;
                     implementation = Some(PathBuf::from(path));
                 }
+                "--spelling" => missions = number(args.next(), "--spelling")?,
+                "--seed" => seed = Some(number(args.next(), "--seed")?),
                 other => return Err(format!("unknown argument: {other}")),
             }
         }
@@ -58,6 +70,11 @@ impl Task {
         Ok(Self::Grade {
             implementation: implementation.ok_or("--bin is required")?,
             quiet,
+            budget: modes::Budget {
+                missions: u32::try_from(missions).map_err(|_| "--spelling is too large")?,
+                spellings: 4,
+                seed: seed.unwrap_or_else(rng::Rng::seed_from_the_clock),
+            },
         })
     }
 }
@@ -88,8 +105,16 @@ fn main() -> ExitCode {
         Task::Grade {
             implementation,
             quiet,
-        } => grade(&contract, &implementation, quiet),
+            budget,
+        } => grade(&contract, &implementation, quiet, &budget),
     }
+}
+
+fn number(argument: Option<String>, flag: &str) -> Result<u64, String> {
+    argument
+        .ok_or_else(|| format!("{flag} needs a number"))?
+        .parse()
+        .map_err(|_| format!("{flag} needs a number"))
 }
 
 fn fail(message: &str) -> ExitCode {
@@ -98,7 +123,12 @@ fn fail(message: &str) -> ExitCode {
     ExitCode::from(COULD_NOT_RUN)
 }
 
-fn grade(contract: &Contract, implementation: &Path, quiet: bool) -> ExitCode {
+fn grade(
+    contract: &Contract,
+    implementation: &Path,
+    quiet: bool,
+    budget: &modes::Budget,
+) -> ExitCode {
     if !implementation.is_file() {
         return fail(&format!(
             "no such implementation: {}",
@@ -145,12 +175,12 @@ fn grade(contract: &Contract, implementation: &Path, quiet: bool) -> ExitCode {
                 .any(|case| case.enforces.iter().any(|id| id == &ruling.id))
         })
         .count();
-    let ruled = contract.ruled().count();
 
     if !quiet {
         println!(
-            "contract {}: {enforced} of {ruled} ruled question(s) enforced",
-            contract.version
+            "contract {}: {enforced} of {} ruled question(s) enforced",
+            contract.version,
+            contract.ruled().count()
         );
     }
     println!(
@@ -159,9 +189,32 @@ fn grade(contract: &Contract, implementation: &Path, quiet: bool) -> ExitCode {
         catalogue.len() - failed
     );
 
-    if failed == 0 {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
+    match modes::spelling_differential(implementation, contract, budget) {
+        // A generator that cannot trust its own output has nothing to say
+        // about anybody else's, so this is a suite failure rather than a
+        // verdict on the implementation.
+        Err(message) => fail(&message),
+        Ok(divergences) => {
+            for divergence in &divergences {
+                println!("DIVERGES on a legal respelling");
+                println!("      mission:  {}", show(&divergence.mission));
+                println!("      spelled:  {}", show(&divergence.against));
+                println!("      expected: {}", show(&divergence.expected));
+                println!("      got:      {}", show(&divergence.got));
+            }
+            println!(
+                "spelling: {} mission(s) x {} rendering(s), seed {}, {} divergence(s)",
+                budget.missions,
+                budget.spellings,
+                budget.seed,
+                divergences.len()
+            );
+
+            if failed == 0 && divergences.is_empty() {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }
     }
 }

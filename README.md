@@ -61,6 +61,29 @@ The coverage line is deliberately unflattering: it counts the ruled questions
 some case cites, so the distance between the contract and the suite is visible
 on every run rather than discoverable by reading both.
 
+## Generated missions
+
+A catalogue is exactly as strong as the shapes someone thought to write down.
+After the cases, the suite draws missions and writes each one several legal
+ways — different whitespace runs, line endings, leading zeros, blank
+separators, a final line with or without its ending — and requires the same
+answer from all of them:
+
+```
+spelling: 60 mission(s) x 4 rendering(s), seed 1, 0 divergence(s)
+```
+
+This asks a program to agree with itself, so it needs no reference
+implementation and still bites when the suite and the program share a wrong
+belief. `--spelling <n>` sets how many missions; `--seed <n>` replays a
+corpus, and a run without one picks a seed and prints it.
+
+The generator checks itself on every run, not only in its own tests: each
+rendering must read back as the mission it came from, and must stay out of the
+shapes the contract leaves open — mixed line endings within one input (Q1) and
+an unterminated final line of only whitespace (Q4). A generator that strayed
+would be testing something nobody has decided.
+
 | Exit code | Meaning |
 |---|---|
 | 0 | the implementation conforms |
