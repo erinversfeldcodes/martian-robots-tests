@@ -42,6 +42,9 @@ const RULINGS: &str = include_str!("../contract/rulings.toml");
 const GRAMMAR: &str = include_str!("../contract/grammar.ebnf");
 const TEMPLATE: &str = include_str!("../contract/template.md");
 
+pub const SAMPLE_INPUT: &[u8] = include_bytes!("../contract/sample.input");
+pub const SAMPLE_OUTPUT: &[u8] = include_bytes!("../contract/sample.output");
+
 mod raw {
     #[derive(serde::Deserialize)]
     pub struct Limits {
@@ -143,6 +146,7 @@ impl Contract {
                 &self.limits.max_instructions.to_string(),
             )
             .replace("{{grammar}}", &grammar_block(grammar))
+            .replace("{{sample}}", &sample_block())
             .replace("{{rulings}}", &self.rulings_table())
             .replace("{{open_questions}}", &self.open_questions());
 
@@ -183,6 +187,28 @@ impl Contract {
         }
         list.trim_end().to_string()
     }
+}
+
+fn sample_block() -> String {
+    let input = String::from_utf8_lossy(SAMPLE_INPUT);
+    let output = String::from_utf8_lossy(SAMPLE_OUTPUT);
+    let mut outputs = output.lines();
+    let mut block = String::from("```\n");
+    for line in input.lines() {
+        match outputs.next() {
+            Some(answer) => {
+                let _ = writeln!(block, "{line:<15}{answer}");
+            }
+            None => {
+                let _ = writeln!(block, "{line}");
+            }
+        }
+    }
+    for answer in outputs {
+        let _ = writeln!(block, "{:<15}{answer}", "");
+    }
+    block.push_str("```");
+    block
 }
 
 fn grammar_block(grammar: &str) -> String {

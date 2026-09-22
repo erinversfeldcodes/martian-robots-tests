@@ -1,9 +1,13 @@
+mod cases;
 mod contract;
+mod expect;
+mod run;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use contract::Contract;
+use expect::show;
 
 const USAGE: &str = "\
 Usage: martian-robots-verify --bin <path> [--quiet]
@@ -102,23 +106,57 @@ fn grade(contract: &Contract, implementation: &Path, quiet: bool) -> ExitCode {
         ));
     }
 
-    let (run, failed) = (0_usize, 0_usize);
+    let catalogue = cases::catalogue(contract);
+    let mut failed = 0_usize;
+
+    for case in &catalogue {
+        let seen = match run::observe(implementation, &case.arguments, &case.stdin, run::TIMEOUT) {
+            Ok(seen) => seen,
+            Err(message) => return fail(&message),
+        };
+
+        match case.expect.judge(&seen) {
+            None => {
+                if !quiet {
+                    println!("ok   {}", case.name);
+                }
+            }
+            Some(why) => {
+                failed += 1;
+                println!("FAIL {}", case.name);
+                println!("      {why}");
+                if !case.stdin.is_empty() {
+                    println!("      stdin: {}", show(&case.stdin));
+                }
+                if case.enforces.is_empty() {
+                    println!("      why: {}", case.note);
+                } else {
+                    println!("      enforces: {}", case.enforces.join(", "));
+                }
+            }
+        }
+    }
+
+    let enforced = contract
+        .ruled()
+        .filter(|ruling| {
+            catalogue
+                .iter()
+                .any(|case| case.enforces.iter().any(|id| id == &ruling.id))
+        })
+        .count();
+    let ruled = contract.ruled().count();
 
     if !quiet {
         println!(
-            "contract {}: {} ruled question(s) to enforce",
-            contract.version,
-            contract.ruled().count()
+            "contract {}: {enforced} of {ruled} ruled question(s) enforced",
+            contract.version
         );
-        if run == 0 {
-            println!(
-                "no cases yet: this runner can grade an implementation but says nothing about it"
-            );
-        }
     }
     println!(
-        "result: {run} case(s) run, {} passed, {failed} failed",
-        run - failed
+        "result: {} case(s) run, {} passed, {failed} failed",
+        catalogue.len(),
+        catalogue.len() - failed
     );
 
     if failed == 0 {
