@@ -3,6 +3,7 @@ mod contract;
 mod expect;
 mod mission;
 mod modes;
+mod properties;
 mod rng;
 mod run;
 mod spelling;
@@ -20,6 +21,7 @@ Usage: martian-robots-verify --bin <path> [--quiet]
   --bin <path>   the implementation under test
   --quiet        report only failures and the result lines
   --spelling <n> missions to render several legal ways (default 60)
+  --properties <n> missions to check invariants against (default 40)
   --seed <n>     the seed the generated missions come from, so a failure
                  replays; a run without one picks and prints its own
   --contract     write the contract to stdout, as one document
@@ -50,6 +52,7 @@ impl Task {
         let mut implementation = None;
         let mut quiet = false;
         let mut missions = 60;
+        let mut checks = 40;
         let mut seed = None;
 
         while let Some(argument) = args.next() {
@@ -62,6 +65,7 @@ impl Task {
                     implementation = Some(PathBuf::from(path));
                 }
                 "--spelling" => missions = number(args.next(), "--spelling")?,
+                "--properties" => checks = number(args.next(), "--properties")?,
                 "--seed" => seed = Some(number(args.next(), "--seed")?),
                 other => return Err(format!("unknown argument: {other}")),
             }
@@ -73,6 +77,7 @@ impl Task {
             budget: modes::Budget {
                 missions: u32::try_from(missions).map_err(|_| "--spelling is too large")?,
                 spellings: 4,
+                properties: u32::try_from(checks).map_err(|_| "--properties is too large")?,
                 seed: seed.unwrap_or_else(rng::Rng::seed_from_the_clock),
             },
         })
@@ -210,7 +215,28 @@ fn grade(
                 divergences.len()
             );
 
-            if failed == 0 && divergences.is_empty() {
+            let properties = match modes::properties(implementation, contract, budget) {
+                Ok(properties) => properties,
+                Err(message) => return fail(&message),
+            };
+            for violation in &properties.violations {
+                println!("VIOLATED {violation}");
+            }
+            if !quiet {
+                // Firing counts, not just failures: a predicate that never
+                // evaluated reads exactly like one that always held.
+                for (name, fired) in properties.names.iter().zip(&properties.fired) {
+                    println!("      {fired:>4} {name}");
+                }
+            }
+            println!(
+                "properties: {} mission(s), seed {}, {} violation(s)",
+                properties.missions,
+                budget.seed,
+                properties.violations.len()
+            );
+
+            if failed == 0 && divergences.is_empty() && properties.violations.is_empty() {
                 ExitCode::SUCCESS
             } else {
                 ExitCode::FAILURE

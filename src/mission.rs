@@ -106,6 +106,39 @@ impl Mission {
         })
     }
 
+    /// A copy with one more robot, drawn on *this* mission's grid. Drawing it
+    /// on another one produces a start position off the world, which is an
+    /// invalid mission - and then a program that correctly refuses it looks
+    /// like a program that changed its mind.
+    pub fn with_another_robot(&self, rng: &mut Rng) -> Self {
+        let mut longer = self.clone();
+        let mut robot = Robot::draw_on(rng, self.max_x, self.max_y);
+        robot.shape(rng);
+        longer.robots.push(robot);
+        longer
+    }
+
+    /// Every robot starts on the grid. The generator must maintain this, so
+    /// it is checked rather than assumed.
+    pub fn every_robot_starts_on_the_grid(&self) -> bool {
+        self.robots
+            .iter()
+            .all(|robot| robot.x <= self.max_x && robot.y <= self.max_y)
+    }
+
+    /// Draw a mission whose robots are shaped so the strongest predicates
+    /// actually fire. A uniformly random instruction string is all-`F` with
+    /// probability 3^-n and turn-only just as rarely, so a properties mode fed
+    /// uniform missions runs, reports green, and never evaluates the two
+    /// predicates that pin an outcome exactly.
+    pub fn draw_shaped(rng: &mut Rng, max_coordinate: u32) -> Self {
+        let mut mission = Self::draw(rng, max_coordinate);
+        for robot in &mut mission.robots {
+            robot.shape(rng);
+        }
+        mission
+    }
+
     /// Draw a mission, biased small on purpose: what this mode tests is
     /// framing, and small worlds with short instruction strings put more of
     /// the interesting shapes — a robot with nothing to do, a mission with no
@@ -114,23 +147,39 @@ impl Mission {
         let max_x = rng.below(6).min(max_coordinate);
         let max_y = rng.below(6).min(max_coordinate);
         let robots = (0..rng.below(4))
-            .map(|_| {
-                let length = rng.below(7) as usize;
-                Robot {
-                    x: rng.below(max_x + 1),
-                    y: rng.below(max_y + 1),
-                    facing: ['N', 'E', 'S', 'W'][rng.below(4) as usize],
-                    instructions: (0..length)
-                        .map(|_| ['L', 'R', 'F'][rng.below(3) as usize])
-                        .collect(),
-                }
-            })
+            .map(|_| Robot::draw_on(rng, max_x, max_y))
             .collect();
         Self {
             max_x,
             max_y,
             robots,
         }
+    }
+}
+
+impl Robot {
+    fn draw_on(rng: &mut Rng, max_x: u32, max_y: u32) -> Self {
+        let length = rng.below(7) as usize;
+        Self {
+            x: rng.below(max_x + 1),
+            y: rng.below(max_y + 1),
+            facing: *rng.pick(&['N', 'E', 'S', 'W']),
+            instructions: (0..length).map(|_| *rng.pick(&['L', 'R', 'F'])).collect(),
+        }
+    }
+
+    /// Bias an instruction string toward the degenerate shapes the strongest
+    /// predicates need. A uniformly random string is all-`F` with probability
+    /// 3^-n, so without this the two predicates that pin an outcome exactly
+    /// would almost never evaluate.
+    fn shape(&mut self, rng: &mut Rng) {
+        let length = self.instructions.len();
+        self.instructions = match rng.below(4) {
+            0 => "F".repeat(length),
+            1 => (0..length).map(|_| *rng.pick(&['L', 'R'])).collect(),
+            2 => String::new(),
+            _ => self.instructions.clone(),
+        };
     }
 }
 
