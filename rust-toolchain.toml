@@ -1,0 +1,5 @@
+# The single definition of the toolchain. rustup reads this file locally and in
+# CI, so there is no second place for a version to drift to.
+[toolchain]
+channel = "1.93.1"
+components = ["clippy", "rustfmt"]
