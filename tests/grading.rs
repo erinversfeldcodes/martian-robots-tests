@@ -220,3 +220,76 @@ fn a_seed_names_the_same_corpus_twice() {
     assert_eq!(once.stdout, again.stdout, "a seeded run must be replayable");
     assert!(once.stdout.contains("seed 7"), "{}", once.stdout);
 }
+
+#[test]
+fn an_implementation_that_answers_the_same_thing_always_is_caught() {
+    let fixtures = Fixtures::new("one-answer");
+    // Structurally perfect and semantically empty: a well-formed line,
+    // canonical numbers, a real orientation. Nothing about its shape is wrong,
+    // so only a predicate about meaning can catch it.
+    let implementation =
+        fixtures.implementation("one-answer", "cat > /dev/null\nprintf '0 0 N\\n'");
+
+    let report = grade_with(
+        &implementation,
+        &["--spelling", "0", "--properties", "40", "--seed", "3"],
+    );
+    assert!(
+        report.stdout.contains("VIOLATED"),
+        "invariants must catch an answer that is shaped right and means nothing:\n{}",
+        report.stdout
+    );
+    assert!(!report.conformed);
+}
+
+#[test]
+fn an_implementation_that_answers_differently_each_run_is_caught() {
+    let fixtures = Fixtures::new("unstable");
+    // Hidden state, which no single input can see: every case and every
+    // respelling is graded against one run, so only running the same input
+    // twice says anything about it.
+    let implementation =
+        fixtures.implementation("unstable", "cat > /dev/null\nprintf '0 %s N\\n' \"$$\"");
+
+    let report = grade_with(
+        &implementation,
+        &["--spelling", "0", "--properties", "20", "--seed", "4"],
+    );
+    assert!(
+        report
+            .stdout
+            .contains("the same input twice gives the same answer"),
+        "a program that answers differently each run must be caught:\n{}",
+        report.stdout
+    );
+}
+
+#[test]
+fn every_invariant_is_evaluated_by_the_corpus_it_runs_against() {
+    let fixtures = Fixtures::new("firing");
+    // Answers, and answers with a loss: several predicates say nothing about
+    // an implementation that reports nothing, and a corpus cannot evaluate
+    // "no two robots are lost on the same cell" against a program that never
+    // loses one.
+    let implementation =
+        fixtures.implementation("always-lost", "cat > /dev/null\nprintf '0 0 N LOST\\n'");
+
+    let report = grade_with(
+        &implementation,
+        &["--spelling", "0", "--properties", "60", "--seed", "5"],
+    );
+    for line in report.stdout.lines() {
+        // The firing counts are printed as `<count> <name>`; a zero there is a
+        // predicate that never evaluated, which reads exactly like one that
+        // always held.
+        if let Some((count, name)) = line.trim().split_once(' ')
+            && let Ok(fired) = count.parse::<u32>()
+        {
+            assert!(
+                fired > 0,
+                "no mission evaluated {name:?}:\n{}",
+                report.stdout
+            );
+        }
+    }
+}

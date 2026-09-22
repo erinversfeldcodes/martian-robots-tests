@@ -84,6 +84,37 @@ shapes the contract leaves open — mixed line endings within one input (Q1) and
 an unterminated final line of only whitespace (Q4). A generator that strayed
 would be testing something nobody has decided.
 
+## Invariants
+
+Agreeing with yourself is not the same as being right: a program that reports
+every robot at `0 0 N` agrees with itself perfectly. So the suite also states
+things that are true of an answer on its own, and checks those:
+
+```
+        40 one line per robot, in input order
+        40 every line is canonical
+        32 every reported position is on the grid
+        25 a robot that cannot move reports where it started
+         6 a robot that only moves forward stops where the world stops it
+        12 no two robots are lost on the same cell
+        40 the same input twice gives the same answer
+        40 appending a robot does not change the robots before it
+properties: 40 mission(s), seed 1, 0 violation(s)
+```
+
+None of these consults a second implementation, which is what makes them the
+answer to a suite and a program sharing a wrong belief. Two need no simulation
+at all: a robot whose instructions contain no `F` cannot have moved, and since
+a loss scents the cell it happened on and a scented cell blocks the next
+departure, no two robots can ever report a loss on the same cell.
+
+The counts are the point of the display. A predicate that never evaluates
+reads exactly like one that always holds, so the suite prints how many
+missions each one actually judged, and missions are drawn with degenerate
+instruction shapes on purpose — a uniformly random instruction string is
+all-`F` about once in 3^n, so without the bias the strongest predicates would
+almost never fire. `--properties <n>` sets the corpus size.
+
 | Exit code | Meaning |
 |---|---|
 | 0 | the implementation conforms |
