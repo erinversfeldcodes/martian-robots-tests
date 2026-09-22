@@ -139,9 +139,11 @@ fn boundaries(build: &mut Builder, contract: &Contract) {
     build.case(
         "a robot coordinate past the maximum is refused",
         &["R5"],
-        "one past the boundary, on a position line",
+        "one past the boundary, on a position line. A coordinate over the \
+         limit is necessarily off the world too, so R1 governs as well and \
+         §2.5 lets a diagnostic cite either",
         format!("5 3\n{} 1 E\n\n", max + 1),
-        Expect::Rejection(Diagnostic::at_line(2, &["R5"])),
+        Expect::Rejection(Diagnostic::at_line(2, &["R5", "R1"])),
     );
 
     build.case(
@@ -176,7 +178,7 @@ fn boundaries(build: &mut Builder, contract: &Contract) {
          defect in a later block: a program that prints each robot as it goes \
          has already produced output a correct run never would",
         format!("5 3\n1 1 E\n\n\n1 1 E\n\n\n{} 1 E\n\n", max + 1),
-        Expect::Rejection(Diagnostic::at_line(8, &["R5"])),
+        Expect::Rejection(Diagnostic::at_line(8, &["R5", "R1"])),
     );
 }
 
