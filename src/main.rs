@@ -5,6 +5,7 @@ mod mission;
 mod modes;
 mod mutation;
 mod properties;
+mod reference;
 mod rng;
 mod run;
 mod spelling;
@@ -24,6 +25,8 @@ Usage: martian-robots-verify --bin <path> [--quiet]
   --spelling <n> missions to render several legal ways (default 60)
   --properties <n> missions to check invariants against (default 40)
   --rejections <n> missions to break on purpose (default 40)
+  --differential <n> missions to compare with a second implementation
+                 written from the same contract (default 60)
   --seed <n>     the seed the generated missions come from, so a failure
                  replays; a run without one picks and prints its own
   --contract     write the contract to stdout, as one document
@@ -56,6 +59,7 @@ impl Task {
         let mut missions = 60;
         let mut checks = 40;
         let mut breakages = 40;
+        let mut against_reference = 60;
         let mut seed = None;
 
         while let Some(argument) = args.next() {
@@ -70,6 +74,7 @@ impl Task {
                 "--spelling" => missions = number(args.next(), "--spelling")?,
                 "--properties" => checks = number(args.next(), "--properties")?,
                 "--rejections" => breakages = number(args.next(), "--rejections")?,
+                "--differential" => against_reference = number(args.next(), "--differential")?,
                 "--seed" => seed = Some(number(args.next(), "--seed")?),
                 other => return Err(format!("unknown argument: {other}")),
             }
@@ -83,6 +88,8 @@ impl Task {
                 spellings: 4,
                 properties: u32::try_from(checks).map_err(|_| "--properties is too large")?,
                 rejections: u32::try_from(breakages).map_err(|_| "--rejections is too large")?,
+                differential: u32::try_from(against_reference)
+                    .map_err(|_| "--differential is too large")?,
                 seed: seed.unwrap_or_else(rng::Rng::seed_from_the_clock),
             },
         })
@@ -268,5 +275,22 @@ fn generated(
         rejections.failures.len()
     );
 
-    Ok(divergences.len() + properties.violations.len() + rejections.failures.len())
+    let disagreements = modes::differential(implementation, contract, budget)?;
+    for disagreement in &disagreements {
+        println!("DISAGREES with the reference");
+        println!("      mission:  {}", show(&disagreement.mission));
+        println!("      expected: {}", show(&disagreement.expected));
+        println!("      got:      {}", show(&disagreement.got));
+    }
+    println!(
+        "differential: {} mission(s), seed {}, {} disagreement(s)",
+        budget.differential,
+        budget.seed,
+        disagreements.len()
+    );
+
+    Ok(divergences.len()
+        + properties.violations.len()
+        + rejections.failures.len()
+        + disagreements.len())
 }

@@ -142,6 +142,27 @@ impl Mission {
             })
     }
 
+    /// Draw a mission with something to simulate: several robots, longer
+    /// instruction strings, and a world small enough that they reach its
+    /// edges and leave scents for each other.
+    pub fn draw_busy(rng: &mut Rng, max_coordinate: u32) -> Self {
+        let max_x = rng.below(6).min(max_coordinate);
+        let max_y = rng.below(6).min(max_coordinate);
+        let robots = (0..=rng.below(3))
+            .map(|_| {
+                let mut robot = Robot::draw_on(rng, max_x, max_y);
+                let length = rng.below(16) as usize;
+                robot.instructions = (0..length).map(|_| *rng.pick(&['L', 'R', 'F'])).collect();
+                robot
+            })
+            .collect();
+        Self {
+            max_x,
+            max_y,
+            robots,
+        }
+    }
+
     /// Draw a mission whose robots are shaped so the strongest predicates
     /// actually fire. A uniformly random instruction string is all-`F` with
     /// probability 3^-n and turn-only just as rarely, so a properties mode fed

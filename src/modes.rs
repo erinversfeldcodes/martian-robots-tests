@@ -5,6 +5,7 @@ use crate::expect::{Diagnostic, Expect, show};
 use crate::mission::Mission;
 use crate::mutation;
 use crate::properties;
+use crate::reference;
 use crate::rng::Rng;
 use crate::run::{TIMEOUT, observe};
 use crate::spelling::{self, Spelling};
@@ -14,6 +15,7 @@ pub struct Budget {
     pub spellings: u32,
     pub properties: u32,
     pub rejections: u32,
+    pub differential: u32,
     pub seed: u64,
 }
 
@@ -231,4 +233,54 @@ pub fn rejections(
     }
 
     Ok(RejectionRun { run, failures })
+}
+
+pub struct Disagreement {
+    pub mission: Vec<u8>,
+    pub expected: Vec<u8>,
+    pub got: Vec<u8>,
+}
+
+/// Compare answers with a second implementation written from the same
+/// contract.
+///
+/// This is the only mode that catches a plainly wrong answer to a mixed
+/// instruction string - a robot one cell east of where it belongs agrees with
+/// itself across every respelling and satisfies every invariant. What it
+/// proves is agreement: a disagreement is a defect in the program under test,
+/// or a place where the contract admits two readings. Both are findings, and
+/// neither side is automatically the wrong one.
+pub fn differential(
+    implementation: &Path,
+    contract: &Contract,
+    budget: &Budget,
+) -> Result<Vec<Disagreement>, String> {
+    let mut rng = Rng::from_seed(budget.seed ^ 0x4469_6666);
+    let mut disagreements = Vec::new();
+
+    for _ in 0..budget.differential {
+        let mission = Mission::draw_busy(&mut rng, contract.limits.max_coordinate);
+        if !mission.is_valid(
+            contract.limits.max_coordinate,
+            contract.limits.max_instructions,
+        ) {
+            return Err(format!(
+                "the generator built an invalid mission: {}",
+                show(&mission.canonical())
+            ));
+        }
+
+        let input = mission.canonical();
+        let expected = reference::run(&mission);
+        let got = answer(implementation, &input)?;
+        if got != expected {
+            disagreements.push(Disagreement {
+                mission: input,
+                expected,
+                got,
+            });
+        }
+    }
+
+    Ok(disagreements)
 }
