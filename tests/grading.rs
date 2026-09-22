@@ -293,3 +293,62 @@ fn every_invariant_is_evaluated_by_the_corpus_it_runs_against() {
         }
     }
 }
+
+#[test]
+fn an_implementation_that_rejects_in_silence_is_caught_by_the_generator_too() {
+    let fixtures = Fixtures::new("silent-rejection");
+    // Refuses everything with no diagnostic. The catalogue catches this, and
+    // so must the generated rejections: a mode that checked only the exit code
+    // and an empty stdout would let it pass over a much larger space.
+    let implementation = fixtures.implementation("silent", "cat > /dev/null\nexit 1");
+
+    let report = grade_with(
+        &implementation,
+        &[
+            "--spelling",
+            "0",
+            "--properties",
+            "0",
+            "--rejections",
+            "40",
+            "--seed",
+            "6",
+        ],
+    );
+    assert!(
+        report.stdout.contains("ACCEPTED") && report.stdout.contains("no diagnostic on stderr"),
+        "generated rejections must judge the diagnostic, not just the exit code:\n{}",
+        report.stdout
+    );
+}
+
+#[test]
+fn an_implementation_that_blames_the_wrong_line_is_caught() {
+    let fixtures = Fixtures::new("wrong-line");
+    // Rejects everything, with a diagnostic that always blames line 1 and
+    // cites a real ruling. Only deriving the expected line from how the
+    // mutation was built catches this.
+    let implementation = fixtures.implementation(
+        "wrong-line",
+        "cat > /dev/null\nprintf 'line 1: something (R5)\\n' >&2\nexit 1",
+    );
+
+    let report = grade_with(
+        &implementation,
+        &[
+            "--spelling",
+            "0",
+            "--properties",
+            "0",
+            "--rejections",
+            "40",
+            "--seed",
+            "7",
+        ],
+    );
+    assert!(
+        report.stdout.contains("does not name"),
+        "the line must come from the mutation, not from the program:\n{}",
+        report.stdout
+    );
+}
