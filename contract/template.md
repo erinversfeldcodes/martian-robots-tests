@@ -1,6 +1,6 @@
 <!--
   Placeholders: {{version}}, {{max_coordinate}}, {{max_instructions}},
-  {{grammar}}, {{rulings}}, {{open_questions}}.
+  {{grammar}}, {{sample}}, {{rulings}}, {{open_questions}}.
 -->
 # The Martian Robots CLI — the brief, the I/O contract, and the ambiguity rulings
 
@@ -46,17 +46,7 @@ orientation, with ` LOST` appended if it fell off.
 
 Sample input → output, verbatim from the brief:
 
-```
-5 3            1 1 E
-1 1 E          3 3 N LOST
-RFRFRFRF       2 3 S
-
-3 2 N
-FRRFLLFFRRFLL
-
-0 3 W
-LLFFFLFLFL
-```
+{{sample}}
 
 ## 2. The I/O contract
 

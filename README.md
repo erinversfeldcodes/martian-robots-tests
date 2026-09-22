@@ -44,18 +44,40 @@ than prose so that a tool can act on it.
 cargo run --release -- --bin /path/to/martian-robots
 ```
 
-One line per case, then a summary — or `--quiet` for the summary alone:
+One line per case, then a summary — or `--quiet` for failures and the summary
+alone:
 
 ```
-contract 1.0.0: 25 ruled question(s) to enforce
-result: 0 case(s) run, 0 passed, 0 failed
+ok   the brief's sample, byte for byte
+FAIL a grid coordinate past the maximum is refused
+      rejected input must produce no stdout, got "1 1 E\n"
+      stdin: "51 3\n"
+      enforces: R5
+contract 1.0.0: 9 of 25 ruled question(s) enforced
+result: 18 case(s) run, 17 passed, 1 failed
 ```
+
+The coverage line is deliberately unflattering: it counts the ruled questions
+some case cites, so the distance between the contract and the suite is visible
+on every run rather than discoverable by reading both.
 
 | Exit code | Meaning |
 |---|---|
 | 0 | the implementation conforms |
 | 1 | the implementation does not conform |
 | 2 | the suite could not run: bad arguments, no such implementation, or an incoherent contract |
+
+## What a case may assume
+
+A case cites the rulings it enforces, and a test refuses a citation to a
+question that does not exist or is still open — `status = "open"` means no case
+may depend on it, in either direction.
+
+Judgement asks for exactly what the contract fixes and nothing more: output is
+byte-exact and stderr is ignored on success (Q2); a rejection must produce no
+stdout and some diagnostic, with any non-zero exit; a diagnostic must name its
+line where one is attributable and must not name one where none is; help output
+must exist, and no ruling constrains its wording, so neither does the suite.
 
 ## Scope
 
