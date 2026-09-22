@@ -67,7 +67,7 @@ impl Mission {
         }
         let grid = lines.get(at).ok_or("no grid line")?;
         at += 1;
-        let (max_x, max_y) = match grid.split_whitespace().collect::<Vec<_>>()[..] {
+        let (max_x, max_y) = match tokens(grid)[..] {
             [x, y] => (number(x)?, number(y)?),
             _ => return Err(format!("grid line is not two numbers: {grid:?}")),
         };
@@ -83,7 +83,7 @@ impl Mission {
             let position = lines[at];
             let instructions = lines.get(at + 1).ok_or("no instruction line")?;
             at += 2;
-            let (x, y, facing) = match position.split_whitespace().collect::<Vec<_>>()[..] {
+            let (x, y, facing) = match tokens(position)[..] {
                 [x, y, facing] if facing.chars().count() == 1 => (
                     number(x)?,
                     number(y)?,
@@ -124,6 +124,22 @@ impl Mission {
         self.robots
             .iter()
             .all(|robot| robot.x <= self.max_x && robot.y <= self.max_y)
+    }
+
+    /// Whether the contract would accept this mission. Used to check that a
+    /// mutation meant to produce invalid input actually did.
+    pub fn is_valid(&self, max_coordinate: u32, max_instructions: u32) -> bool {
+        self.max_x <= max_coordinate
+            && self.max_y <= max_coordinate
+            && self.every_robot_starts_on_the_grid()
+            && self.robots.iter().all(|robot| {
+                matches!(robot.facing, 'N' | 'E' | 'S' | 'W')
+                    && robot.instructions.len() <= max_instructions as usize
+                    && robot
+                        .instructions
+                        .chars()
+                        .all(|step| matches!(step, 'L' | 'R' | 'F'))
+            })
     }
 
     /// Draw a mission whose robots are shaped so the strongest predicates
@@ -181,6 +197,16 @@ impl Robot {
             _ => self.instructions.clone(),
         };
     }
+}
+
+/// Split on the only separators the grammar has. Anything else - a
+/// no-break space, a form feed, a stray carriage return - stays glued to the
+/// token beside it and fails to parse, which is what the contract says should
+/// happen to it.
+fn tokens(line: &str) -> Vec<&str> {
+    line.split([' ', '\t'])
+        .filter(|part| !part.is_empty())
+        .collect()
 }
 
 fn number(token: &str) -> Result<u32, String> {

@@ -1,8 +1,9 @@
 use std::path::Path;
 
 use crate::contract::Contract;
-use crate::expect::show;
+use crate::expect::{Diagnostic, Expect, show};
 use crate::mission::Mission;
+use crate::mutation;
 use crate::properties;
 use crate::rng::Rng;
 use crate::run::{TIMEOUT, observe};
@@ -12,6 +13,7 @@ pub struct Budget {
     pub missions: u32,
     pub spellings: u32,
     pub properties: u32,
+    pub rejections: u32,
     pub seed: u64,
 }
 
@@ -182,4 +184,51 @@ pub fn properties(
         violations,
         missions: budget.properties,
     })
+}
+
+pub struct RejectionRun {
+    pub run: u32,
+    pub failures: Vec<String>,
+}
+
+/// Break valid missions on purpose and check the rejection obligations over a
+/// much larger space than a catalogue can enumerate.
+///
+/// The expectation is derived from how each mutation was built, never from
+/// what the program said, and the diagnostic is judged rather than ignored: a
+/// mode that checks only the exit code and an empty stdout lets a program
+/// reject in silence.
+pub fn rejections(
+    implementation: &Path,
+    contract: &Contract,
+    budget: &Budget,
+) -> Result<RejectionRun, String> {
+    let mut rng = Rng::from_seed(budget.seed ^ 0x5265_6A65);
+    let mut failures = Vec::new();
+    let mut run = 0;
+
+    for _ in 0..budget.rejections {
+        let mission = Mission::draw(&mut rng, contract.limits.max_coordinate);
+        let Some(mutation) = mutation::mutate(
+            &mut rng,
+            &mission,
+            contract.limits.max_coordinate,
+            contract.limits.max_instructions,
+        ) else {
+            continue;
+        };
+        run += 1;
+
+        let expect = Expect::Rejection(Diagnostic::at_line(mutation.line, &mutation.tags));
+        let seen = observe(implementation, &[], &mutation.rendered, TIMEOUT)?;
+        if let Some(why) = expect.judge(&seen) {
+            failures.push(format!(
+                "{}: {why}\n      on {}",
+                mutation.kind,
+                show(&mutation.rendered)
+            ));
+        }
+    }
+
+    Ok(RejectionRun { run, failures })
 }

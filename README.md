@@ -115,6 +115,28 @@ instruction shapes on purpose — a uniformly random instruction string is
 all-`F` about once in 3^n, so without the bias the strongest predicates would
 almost never fire. `--properties <n>` sets the corpus size.
 
+## Generated rejections
+
+The last mode breaks valid missions on purpose, one way at a time: a
+coordinate past a limit, a start off the world, a letter outside a vocabulary,
+a token too many or too few, a separator the grammar does not have.
+
+```
+rejections: 31 mutation(s), seed 1, 0 failure(s)
+```
+
+Two things make this more than a fuzzer. The expected line and the admissible
+rulings are derived from *how the mutation was built*, never from what the
+program said, so a program cannot teach the suite to accept its own answer.
+And the diagnostic is judged, not just the exit code — a mode that checked
+only for a non-zero exit and an empty stdout would let a program reject in
+silence over a much larger space than any catalogue.
+
+Each mutation is checked to be genuinely invalid before it is used. A mutation
+that quietly left a valid mission behind would turn a rejection test into a
+much weaker success test that still reported green. `--rejections <n>` sets
+how many to attempt.
+
 | Exit code | Meaning |
 |---|---|
 | 0 | the implementation conforms |
