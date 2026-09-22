@@ -38,6 +38,25 @@ disagrees is wrong, and a case is expected to pin it. A question with
 implementation may answer it however it likes. The difference is data rather
 than prose so that a tool can act on it.
 
+## Running the suite
+
+```
+cargo run --release -- --bin /path/to/martian-robots
+```
+
+One line per case, then a summary — or `--quiet` for the summary alone:
+
+```
+contract 1.0.0: 25 ruled question(s) to enforce
+result: 0 case(s) run, 0 passed, 0 failed
+```
+
+| Exit code | Meaning |
+|---|---|
+| 0 | the implementation conforms |
+| 1 | the implementation does not conform |
+| 2 | the suite could not run: bad arguments, no such implementation, or an incoherent contract |
+
 ## Scope
 
 The command-line surface only: text on stdin, text on stdout, diagnostics on
