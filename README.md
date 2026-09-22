@@ -137,6 +137,27 @@ that quietly left a valid mission behind would turn a rejection test into a
 much weaker success test that still reported green. `--rejections <n>` sets
 how many to attempt.
 
+## Differential
+
+Last, the suite compares answers with a second implementation written from the
+same contract:
+
+```
+differential: 60 mission(s), seed 1, 0 disagreement(s)
+```
+
+This is the only mode that catches a plainly wrong answer to a mixed
+instruction string. A robot that ends one cell east of where it belongs agrees
+with itself across every respelling and satisfies every invariant; nothing
+short of another implementation notices.
+
+What it proves is **agreement**, and the difference matters. A disagreement is
+a defect in the program under test, or a place where the contract admits two
+readings and the two sides took different ones — both are findings, and
+neither side is automatically the wrong one. The reference is checked against
+the one piece of external truth available: the brief's own published sample,
+input and output, written by somebody who wrote neither implementation.
+
 | Exit code | Meaning |
 |---|---|
 | 0 | the implementation conforms |

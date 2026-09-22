@@ -69,7 +69,19 @@ impl Report {
 }
 
 fn grade(implementation: &Path) -> Report {
-    grade_with(implementation, &["--spelling", "0"])
+    grade_with(
+        implementation,
+        &[
+            "--spelling",
+            "0",
+            "--properties",
+            "0",
+            "--rejections",
+            "0",
+            "--differential",
+            "0",
+        ],
+    )
 }
 
 /// Graded with the generated modes turned down, unless a test is about them:
@@ -351,4 +363,36 @@ fn an_implementation_that_blames_the_wrong_line_is_caught() {
         "the line must come from the mutation, not from the program:\n{}",
         report.stdout
     );
+}
+
+#[test]
+fn an_implementation_that_is_wrong_in_a_way_nothing_else_sees_is_caught() {
+    let fixtures = Fixtures::new("plausible");
+    // Shaped right, self-consistent, and wrong: one well-formed line, on any
+    // grid, whatever the instructions say. Every respelling agrees with every
+    // other, and only a second implementation can say the answer is not the
+    // mission's.
+    let implementation = fixtures.implementation("plausible", "cat > /dev/null\nprintf '0 0 N\\n'");
+
+    let report = grade_with(
+        &implementation,
+        &[
+            "--spelling",
+            "0",
+            "--properties",
+            "0",
+            "--rejections",
+            "0",
+            "--differential",
+            "40",
+            "--seed",
+            "8",
+        ],
+    );
+    assert!(
+        report.stdout.contains("DISAGREES with the reference"),
+        "the differential must catch a wrong answer nothing else sees:\n{}",
+        report.stdout
+    );
+    assert!(!report.conformed);
 }
