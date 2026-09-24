@@ -2,40 +2,19 @@ use std::fmt::Write as _;
 
 use crate::run::{Ending, Observation};
 
-/// What the contract lets a suite demand of one run, and nothing more.
-///
-/// The line reference and the ruling tag are contract (§2.5); the sentence
-/// around them is implementation-chosen, so a judge that asks for prose fails
-/// conforming programs. Stderr on success is Q2 — open — so success ignores
-/// it entirely.
+/// What the contract lets a suite demand of one run
 #[derive(Debug)]
 pub enum Expect {
-    /// Valid input: stdout byte-exact, exit 0, stderr unexamined.
     Output(Vec<u8>),
-    /// Invalid input: no stdout, a non-zero exit, and a diagnostic that
-    /// carries what §2.5 requires of it.
     Rejection(Diagnostic),
-    /// A help flag alone: usage on stdout, exit 0. No ruling constrains the
-    /// text, so nothing here does either.
     Help,
-    /// Any other argument: a usage error on stderr, non-zero exit, no stdout.
     UsageError,
 }
 
-/// The three-part obligation §2.5 places on a diagnostic.
 #[derive(Debug, Default)]
 pub struct Diagnostic {
-    /// Substrings that must appear — the `line N` reference, where a physical
-    /// line is attributable.
     pub required: Vec<String>,
-    /// Tags of which at least one must appear. Rulings overlap, and §2.5 says
-    /// one governing tag suffices, so a suite that demands a particular one
-    /// invents contract.
     pub any_of: Vec<String>,
-    /// §2.5: a violation with no attributable physical line carries no line
-    /// reference at all. This is the half that catches a fabricated line
-    /// number — and it looks for a reference, not for the word, because a
-    /// diagnostic is free to say "grid line" without naming one.
     pub forbids_a_line_reference: bool,
 }
 
@@ -48,9 +27,6 @@ impl Diagnostic {
         }
     }
 
-    /// A rejection whose governing ruling is clear but whose line is
-    /// contestable — two framing rules can disagree about which physical line
-    /// carries the defect, and §2.5 does not settle it.
     pub fn tagged(tags: &[&str]) -> Self {
         Self {
             required: Vec::new(),
@@ -59,8 +35,6 @@ impl Diagnostic {
         }
     }
 
-    /// A violation with no attributable line: §2.5 says it carries no line
-    /// reference, so naming one is wrong rather than merely unhelpful.
     pub fn without_a_line(tags: &[&str]) -> Self {
         Self {
             required: Vec::new(),
@@ -71,8 +45,6 @@ impl Diagnostic {
 }
 
 impl Expect {
-    /// `None` when the observation satisfies the expectation, otherwise why
-    /// it did not — phrased for someone reading a CI log.
     pub fn judge(&self, seen: &Observation) -> Option<String> {
         match seen.ending {
             Ending::Timeout => {
@@ -160,8 +132,6 @@ impl Diagnostic {
     }
 }
 
-/// The first `line N` in a diagnostic, if it carries one. "grid line" is not
-/// a reference; "line 1" is.
 fn line_reference(stderr: &str) -> Option<String> {
     let mut rest = stderr;
     while let Some(at) = rest.find("line ") {
@@ -183,8 +153,6 @@ fn code_of(seen: &Observation) -> String {
     }
 }
 
-/// Bytes as a reader can see them: invisible characters are the whole subject
-/// of several rulings, and a CI log that prints them raw shows nothing.
 pub fn show(bytes: &[u8]) -> String {
     let mut shown = String::with_capacity(bytes.len() + 2);
     shown.push('"');

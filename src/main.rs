@@ -156,9 +156,6 @@ fn grade(
     match catalogue(contract, implementation, quiet) {
         Err(message) => fail(&message),
         Ok(failed) => match generated(contract, implementation, quiet, budget) {
-            // A generator that cannot trust its own output has nothing to say
-            // about anybody else's, so this is a suite failure rather than a
-            // verdict on the implementation.
             Err(message) => fail(&message),
             Ok(complaints) => {
                 if failed == 0 && complaints == 0 {
@@ -251,8 +248,6 @@ fn generated(
         println!("VIOLATED {violation}");
     }
     if !quiet {
-        // Firing counts, not just failures: a predicate that never evaluated
-        // reads exactly like one that always held.
         for (name, fired) in properties.names.iter().zip(&properties.fired) {
             println!("      {fired:>4} {name}");
         }

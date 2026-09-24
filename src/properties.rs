@@ -1,19 +1,3 @@
-//! Statements about a program's own output that are true or false without
-//! asking anybody else.
-//!
-//! Every differential check proves that two implementations agree. If this
-//! suite and the program it grades share a wrong belief, the run is green and
-//! nothing says otherwise — and since both were written from one document,
-//! that correlation is real rather than hypothetical. These predicates have no
-//! such dependency: each restates a sentence of the contract as something
-//! observable in the answer itself.
-//!
-//! Two of them need no simulation at all. A robot whose instructions contain
-//! no `F` cannot move, so its position is its start and it cannot be lost. And
-//! since a loss scents the cell it happened on, and a world-leaving move from
-//! a scented cell is ignored, no two robots can ever report a loss on the same
-//! cell.
-
 use crate::mission::{Mission, Robot};
 
 pub const NAMES: [&str; 6] = [
@@ -27,7 +11,6 @@ pub const NAMES: [&str; 6] = [
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Verdict {
-    /// The mission says nothing about this property, which is not a pass.
     NotApplicable,
     Held,
     Violated(String),
@@ -41,13 +24,10 @@ struct Reported {
     lost: bool,
 }
 
-/// Judge every property against one answer. The order matches `NAMES`.
 pub fn check(mission: &Mission, stdout: &[u8]) -> Vec<Verdict> {
     let reports = match parse(stdout) {
         Ok(reports) => reports,
         Err(why) => {
-            // An unreadable answer is a violation of the shape properties and
-            // says nothing about the rest.
             return vec![
                 Verdict::Violated(why.clone()),
                 Verdict::Violated(why),
@@ -61,7 +41,7 @@ pub fn check(mission: &Mission, stdout: &[u8]) -> Vec<Verdict> {
 
     vec![
         one_line_per_robot(mission, &reports),
-        Verdict::Held, // parsing strictly is the canonical-line property
+        Verdict::Held,
         on_the_grid(mission, &reports),
         cannot_move(mission, &reports),
         only_forward(mission, &reports),
@@ -69,8 +49,6 @@ pub fn check(mission: &Mission, stdout: &[u8]) -> Vec<Verdict> {
     ]
 }
 
-/// Strict by design: the shape of a line is contract (§2.3), so anything this
-/// refuses is a violation rather than a parsing inconvenience.
 fn parse(stdout: &[u8]) -> Result<Vec<Reported>, String> {
     let text = std::str::from_utf8(stdout).map_err(|_| "output is not UTF-8".to_string())?;
     if text.is_empty() {
@@ -141,7 +119,7 @@ fn on_the_grid(mission: &Mission, reports: &[Reported]) -> Verdict {
 
 /// A robot whose instructions contain no `F` never moves, so its position is
 /// its start, it keeps turning through whatever the turns say, and it cannot
-/// be lost. No delta table required.
+/// be lost
 fn cannot_move(mission: &Mission, reports: &[Reported]) -> Verdict {
     let mut applied = false;
     for (robot, report) in mission.robots.iter().zip(reports) {
@@ -173,7 +151,7 @@ fn cannot_move(mission: &Mission, reports: &[Reported]) -> Verdict {
 
 /// The first robot runs on a world with no scents in it, so an instruction
 /// string of nothing but `F` has exactly one answer: it walks until the world
-/// stops it, and is lost the step after that.
+/// stops it, and is lost the step after that
 fn only_forward(mission: &Mission, reports: &[Reported]) -> Verdict {
     let (Some(robot), Some(report)) = (mission.robots.first(), reports.first()) else {
         return Verdict::NotApplicable;
@@ -214,7 +192,7 @@ fn only_forward(mission: &Mission, reports: &[Reported]) -> Verdict {
 }
 
 /// A loss scents the cell it happened on, and a world-leaving move from a
-/// scented cell is ignored. So a second loss on the same cell is impossible,
+/// scented cell is ignored. A second loss on the same cell is impossible,
 /// whatever the missions or the movement code.
 fn no_two_losses_on_one_cell(reports: &[Reported]) -> Verdict {
     let mut lost: Vec<(u32, u32)> = Vec::new();
