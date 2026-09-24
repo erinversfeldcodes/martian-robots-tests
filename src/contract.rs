@@ -5,6 +5,121 @@ pub struct Contract {
     pub version: String,
     pub limits: Limits,
     pub rulings: Vec<Ruling>,
+    pub grammar: Grammar,
+}
+
+/// The parts of the published grammar a generator has to know: what separates
+/// tokens, what ends a line, and which letters the two vocabularies hold.
+///
+/// Read from `grammar.ebnf` rather than restated here. That is what makes the
+/// grammar the source of truth instead of a picture of one - and it gives the
+/// rejection generator its alphabet for free, because the characters that are
+/// *not* separators are exactly the ones it should be injecting.
+#[derive(Debug)]
+pub struct Grammar {
+    pub separators: Vec<char>,
+    pub line_endings: Vec<String>,
+    pub orientations: Vec<char>,
+    pub instructions: Vec<char>,
+}
+
+impl Grammar {
+    /// Characters a runtime is liable to treat as whitespace, minus the ones
+    /// this grammar actually admits as separators or line structure.
+    ///
+    /// The pool is about the world outside the contract - what someone else's
+    /// `split_whitespace` accepts - so it cannot be derived. The filter is the
+    /// contract: admit a character in `ws` and it stops being injected, with
+    /// no list to remember to update.
+    pub fn not_separators(&self) -> Vec<char> {
+        const LIABLE: [char; 8] = [
+            '\u{b}', '\u{c}', '\u{a0}', '\u{1680}', '\u{2002}', '\u{2028}', '\u{3000}', '\u{feff}',
+        ];
+        LIABLE
+            .into_iter()
+            .filter(|character| {
+                !self.separators.contains(character)
+                    && !self
+                        .line_endings
+                        .iter()
+                        .any(|ending| ending.contains(*character))
+            })
+            .collect()
+    }
+
+    fn parse(text: &str) -> Result<Self, String> {
+        let separators = single_characters(text, "ws")?;
+        let orientations = single_characters(text, "orientation")?;
+        let instructions = single_characters(text, "instruction")?;
+        let line_endings = terminals(text, "eol")?;
+        Ok(Self {
+            separators,
+            line_endings,
+            orientations,
+            instructions,
+        })
+    }
+}
+
+/// Every quoted terminal in one production, in order, without repeats.
+fn terminals(grammar: &str, production: &str) -> Result<Vec<String>, String> {
+    let line = grammar
+        .lines()
+        .find(|line| line.split_whitespace().next() == Some(production) && line.contains('='))
+        .ok_or_else(|| format!("grammar.ebnf has no {production} production"))?;
+
+    let mut found = Vec::new();
+    let mut rest = line;
+    while let Some(open) = rest.find('"') {
+        let after = &rest[open + 1..];
+        let close = after
+            .find('"')
+            .ok_or_else(|| format!("unterminated terminal in {production}"))?;
+        let terminal = unescape(&after[..close]);
+        if !found.contains(&terminal) {
+            found.push(terminal);
+        }
+        rest = &after[close + 1..];
+    }
+
+    if found.is_empty() {
+        return Err(format!("{production} names no terminals"));
+    }
+    Ok(found)
+}
+
+fn single_characters(grammar: &str, production: &str) -> Result<Vec<char>, String> {
+    terminals(grammar, production)?
+        .into_iter()
+        .map(|terminal| {
+            let mut characters = terminal.chars();
+            match (characters.next(), characters.next()) {
+                (Some(only), None) => Ok(only),
+                _ => Err(format!(
+                    "{production} has a terminal that is not one character"
+                )),
+            }
+        })
+        .collect()
+}
+
+fn unescape(terminal: &str) -> String {
+    let mut out = String::new();
+    let mut characters = terminal.chars();
+    while let Some(character) = characters.next() {
+        if character == '\\' {
+            match characters.next() {
+                Some('t') => out.push('\t'),
+                Some('n') => out.push('\n'),
+                Some('r') => out.push('\r'),
+                Some(other) => out.push(other),
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(character);
+        }
+    }
+    out
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -71,10 +186,10 @@ mod raw {
 
 impl Contract {
     pub fn load() -> Result<Self, String> {
-        Self::parse(LIMITS, RULINGS)
+        Self::parse(LIMITS, RULINGS, GRAMMAR)
     }
 
-    fn parse(limits: &str, rulings: &str) -> Result<Self, String> {
+    fn parse(limits: &str, rulings: &str, grammar: &str) -> Result<Self, String> {
         let limits: raw::Limits =
             toml::from_str(limits).map_err(|error| format!("contract/limits.toml: {error}"))?;
         let rulings: raw::Rulings =
@@ -119,6 +234,7 @@ impl Contract {
             version: limits.version,
             limits: limits.limits,
             rulings: parsed,
+            grammar: Grammar::parse(grammar)?,
         })
     }
 
@@ -218,7 +334,7 @@ fn grammar_block(grammar: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Contract, Decision};
+    use super::{Contract, Decision, GRAMMAR, Grammar};
 
     const LIMITS: &str =
         "version = \"1.0.0\"\n[limits]\nmax_coordinate = 1\nmax_instructions = 1\n";
@@ -231,6 +347,62 @@ mod tests {
 
     fn open(id: &str) -> String {
         format!("[[ruling]]\nid = \"{id}\"\nstatus = \"open\"\nquestion = \"q\"\nnote = \"n\"\n\n")
+    }
+
+    const SMALL: &str = concat!(
+        "orientation = \"N\" | \"S\" ;\n",
+        "instruction = \"L\" | \"F\" ;\n",
+        "ws          = \" \" , { \" \" } ;\n",
+        "eol         = \"\\n\" ;\n",
+    );
+
+    #[test]
+    fn the_grammar_is_read_rather_than_restated() {
+        let grammar = Grammar::parse(SMALL).unwrap();
+        assert_eq!(grammar.separators, [' ']);
+        assert_eq!(grammar.line_endings, ["\n"]);
+        assert_eq!(grammar.orientations, ['N', 'S']);
+        assert_eq!(grammar.instructions, ['L', 'F']);
+    }
+
+    #[test]
+    fn escaped_terminals_are_the_characters_they_name() {
+        let grammar = Grammar::parse(&SMALL.replace(
+            "eol         = \"\\n\" ;",
+            "eol = \"\\n\" | \"\\r\\n\" ;\nws2 = \"\\t\" ;",
+        ))
+        .unwrap();
+        assert_eq!(grammar.line_endings, ["\n", "\r\n"]);
+    }
+
+    #[test]
+    fn changing_what_separates_tokens_changes_what_is_injected() {
+        // The generators draw their foreign characters from what the grammar
+        // does not admit. Admit one, and it stops being a defect.
+        let strict = Grammar::parse(SMALL).unwrap();
+        assert!(strict.not_separators().contains(&'\u{a0}'));
+
+        let lenient = Grammar::parse(&SMALL.replace(
+            "ws          = \" \" , { \" \" } ;",
+            "ws = \" \" | \"\\u{a0}\" ;",
+        ));
+        // The terminal is written as a literal no-break space here, since the
+        // grammar has no \u escape of its own.
+        let lenient = lenient.unwrap_or_else(|_| {
+            Grammar::parse(&SMALL.replace(
+                "ws          = \" \" , { \" \" } ;",
+                "ws = \" \" | \"\u{a0}\" ;",
+            ))
+            .unwrap()
+        });
+        assert!(lenient.separators.contains(&'\u{a0}'));
+        assert!(!lenient.not_separators().contains(&'\u{a0}'));
+    }
+
+    #[test]
+    fn a_grammar_missing_a_production_is_refused() {
+        let error = Grammar::parse("orientation = \"N\" ;\n").unwrap_err();
+        assert!(error.contains("ws"), "{error}");
     }
 
     #[test]
@@ -272,7 +444,7 @@ mod tests {
     #[test]
     fn a_ruled_question_needs_a_ruling() {
         let entries = "[[ruling]]\nid = \"R1\"\nstatus = \"ruled\"\nquestion = \"q\"\n";
-        let error = Contract::parse(LIMITS, entries).unwrap_err();
+        let error = Contract::parse(LIMITS, entries, GRAMMAR).unwrap_err();
         assert!(error.contains("R1"), "{error}");
         assert!(error.contains("no ruling"), "{error}");
     }
@@ -280,7 +452,7 @@ mod tests {
     #[test]
     fn an_open_question_needs_a_note() {
         let entries = "[[ruling]]\nid = \"Q1\"\nstatus = \"open\"\nquestion = \"q\"\n";
-        let error = Contract::parse(LIMITS, entries).unwrap_err();
+        let error = Contract::parse(LIMITS, entries, GRAMMAR).unwrap_err();
         assert!(error.contains("Q1"), "{error}");
         assert!(error.contains("no note"), "{error}");
     }
@@ -288,7 +460,7 @@ mod tests {
     #[test]
     fn a_status_is_ruled_or_open_and_nothing_else() {
         let entries = "[[ruling]]\nid = \"R1\"\nstatus = \"maybe\"\nquestion = \"q\"\n";
-        let error = Contract::parse(LIMITS, entries).unwrap_err();
+        let error = Contract::parse(LIMITS, entries, GRAMMAR).unwrap_err();
         assert!(error.contains("R1"), "{error}");
         assert!(error.contains("maybe"), "{error}");
     }
@@ -296,14 +468,15 @@ mod tests {
     #[test]
     fn an_id_cannot_be_used_twice() {
         let entries = format!("{}{}", ruled("R1"), ruled("R1"));
-        let error = Contract::parse(LIMITS, &entries).unwrap_err();
+        let error = Contract::parse(LIMITS, &entries, GRAMMAR).unwrap_err();
         assert!(error.contains("R1"), "{error}");
         assert!(error.contains("twice"), "{error}");
     }
 
     #[test]
     fn a_hole_nothing_fills_is_refused() {
-        let contract = Contract::parse(LIMITS, &format!("{}{}", ruled("R1"), open("Q1"))).unwrap();
+        let contract =
+            Contract::parse(LIMITS, &format!("{}{}", ruled("R1"), open("Q1")), GRAMMAR).unwrap();
         let error = contract
             .render_with("-->\n{{rulings}} {{nonexistent}}\n", "*)\nx = \"y\" ;\n")
             .unwrap_err();
@@ -312,7 +485,8 @@ mod tests {
 
     #[test]
     fn a_contract_with_no_holes_renders_its_data() {
-        let contract = Contract::parse(LIMITS, &format!("{}{}", ruled("R1"), open("Q1"))).unwrap();
+        let contract =
+            Contract::parse(LIMITS, &format!("{}{}", ruled("R1"), open("Q1")), GRAMMAR).unwrap();
         let document = contract
             .render_with(
                 "-->\n{{version}} {{max_coordinate}} {{max_instructions}}\n{{grammar}}\n{{rulings}}\n{{open_questions}}\n",

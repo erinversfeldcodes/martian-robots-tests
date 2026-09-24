@@ -1,17 +1,4 @@
-//! Valid missions broken on purpose, one way at a time.
-//!
-//! The catalogue pins rejection at the shapes somebody enumerated. This breaks
-//! generated missions by construction and checks the same obligations over a
-//! much larger space: no stdout, a non-zero exit, and a diagnostic that names
-//! the line the defect is on and cites a ruling that governs it.
-//!
-//! Where the expectation comes from matters. The line and the admissible tags
-//! are derived from *how the mutation was built* — never from what the program
-//! under test said — so a program cannot teach the suite to accept its own
-//! answer. And the input is checked to be genuinely invalid before it is used,
-//! because a mutation that quietly left a valid mission behind would turn a
-//! rejection test into a much weaker success test that still reports green.
-
+use crate::contract::Contract;
 use crate::mission::Mission;
 use crate::rng::Rng;
 
@@ -27,9 +14,7 @@ pub struct Mutation {
 /// How the mutation makes the input invalid, and therefore what must be true
 /// of it before it is used to grade anybody.
 enum Invalidity {
-    /// The grammar rejects it: the suite's own reader must fail to read it.
     Grammar,
-    /// It parses, but the contract's limits refuse it.
     Semantic,
 }
 
@@ -40,12 +25,9 @@ struct Broken {
     invalidity: Invalidity,
 }
 
-pub fn mutate(
-    rng: &mut Rng,
-    mission: &Mission,
-    max_coordinate: u32,
-    max_instructions: u32,
-) -> Option<Mutation> {
+pub fn mutate(rng: &mut Rng, mission: &Mission, contract: &Contract) -> Option<Mutation> {
+    let max_coordinate = contract.limits.max_coordinate;
+    let max_instructions = contract.limits.max_instructions;
     let mut lines: Vec<String> = String::from_utf8(mission.canonical())
         .ok()?
         .lines()
@@ -65,7 +47,7 @@ pub fn mutate(
             max_instructions,
         )?
     } else {
-        break_the_shape(rng, mission, &mut lines, robot)
+        break_the_shape(rng, mission, &mut lines, robot, contract)
     };
 
     let rendered = format!("{}\n", lines.join("\n")).into_bytes();
@@ -84,9 +66,7 @@ pub fn mutate(
     })
 }
 
-/// Break what a token means: a number past a limit, a letter outside a
-/// vocabulary, a string longer than the contract allows. The line still has
-/// the shape the grammar wants.
+/// Break what a token means
 fn break_a_value(
     rng: &mut Rng,
     mission: &Mission,
@@ -100,8 +80,6 @@ fn break_a_value(
     let at_hand = &mission.robots[robot];
 
     Some(match rng.below(5) {
-        // A coordinate over the limit on the grid line. Nothing else can
-        // govern it: the robots move with the world.
         0 => {
             lines[0] = format!("{} {}", max_coordinate + 1 + rng.below(9), mission.max_y);
             Broken {
@@ -111,8 +89,6 @@ fn break_a_value(
                 invalidity: Invalidity::Semantic,
             }
         }
-        // On a position line the same value is also off the world, so either
-        // ruling governs (§2.5).
         1 => {
             lines[position] = format!(
                 "{} {} {}",
@@ -127,8 +103,6 @@ fn break_a_value(
                 invalidity: Invalidity::Semantic,
             }
         }
-        // Off the world while staying under the limit, which isolates R1 -
-        // possible only where the world is smaller than the limit.
         2 => {
             if mission.max_x >= max_coordinate {
                 return None;
@@ -164,9 +138,14 @@ fn break_a_value(
     })
 }
 
-/// Break the shape of a line: a token too many, a token too few, a character
-/// the grammar has no place for.
-fn break_the_shape(rng: &mut Rng, mission: &Mission, lines: &mut [String], robot: usize) -> Broken {
+/// Break the shape of a line
+fn break_the_shape(
+    rng: &mut Rng,
+    mission: &Mission,
+    lines: &mut [String],
+    robot: usize,
+    contract: &Contract,
+) -> Broken {
     let position = 1 + robot * 2;
     let instructions = position + 1;
     let at_hand = &mission.robots[robot];
@@ -200,17 +179,13 @@ fn break_the_shape(rng: &mut Rng, mission: &Mission, lines: &mut [String], robot
                 kind: "an instruction outside the vocabulary",
                 at: instructions,
                 tags: vec!["R7", "R12"],
-                // The line still has the shape the grammar wants - one token
-                // of letters - so what refuses it is the vocabulary, not the
-                // grammar.
                 invalidity: Invalidity::Semantic,
             }
         }
-        // A separator the grammar does not have. Q6 leaves open whether a
-        // diagnostic calls this a bad separator or an unknown character, so
-        // both readings satisfy the obligation.
         _ => {
-            let foreign = *rng.pick(&['\u{c}', '\u{b}', '\u{a0}', '\u{3000}']);
+            // Drawn from what the grammar does *not* admit, so admitting a
+            // character in `ws` stops it being injected here.
+            let foreign = *rng.pick(&contract.grammar.not_separators());
             lines[position] = format!("{}{foreign}{} {}", at_hand.x, at_hand.y, at_hand.facing);
             Broken {
                 kind: "a separator the grammar does not have",
@@ -222,17 +197,12 @@ fn break_the_shape(rng: &mut Rng, mission: &Mission, lines: &mut [String], robot
     }
 }
 
-/// A mutation that left valid input behind would quietly turn a rejection
-/// test into a success test. `None` here means the generator is wrong, not
-/// the program.
 fn check(
     rendered: &[u8],
     invalidity: &Invalidity,
     max_coordinate: u32,
     max_instructions: u32,
 ) -> Option<()> {
-    // A semantic mutation the reader cannot parse is still invalid input,
-    // just for a reason this mutation did not intend.
     let refused = match (invalidity, Mission::read_back(rendered)) {
         (Invalidity::Grammar, read) => read.is_err(),
         (Invalidity::Semantic, Ok(mission)) => !mission.is_valid(max_coordinate, max_instructions),
@@ -244,19 +214,25 @@ fn check(
 #[cfg(test)]
 mod tests {
     use super::mutate;
+    use crate::contract::Contract;
     use crate::mission::Mission;
     use crate::rng::Rng;
 
     #[test]
     fn every_mutation_leaves_input_the_contract_refuses() {
+        let contract = Contract::load().unwrap();
         let mut rng = Rng::from_seed(20_260_922);
         let mut built = 0;
         for _ in 0..2_000 {
-            let mission = Mission::draw(&mut rng, 50);
-            if let Some(mutation) = mutate(&mut rng, &mission, 50, 99) {
+            let mission = Mission::draw(&mut rng, &contract);
+            if let Some(mutation) = mutate(&mut rng, &mission, &contract) {
                 built += 1;
-                let valid =
-                    Mission::read_back(&mutation.rendered).is_ok_and(|read| read.is_valid(50, 99));
+                let valid = Mission::read_back(&mutation.rendered).is_ok_and(|read| {
+                    read.is_valid(
+                        contract.limits.max_coordinate,
+                        contract.limits.max_instructions,
+                    )
+                });
                 assert!(
                     !valid,
                     "{} left valid input: {:?}",
@@ -270,11 +246,12 @@ mod tests {
 
     #[test]
     fn the_line_named_is_the_line_changed() {
+        let contract = Contract::load().unwrap();
         let mut rng = Rng::from_seed(4);
         for _ in 0..2_000 {
-            let mission = Mission::draw(&mut rng, 50);
+            let mission = Mission::draw(&mut rng, &contract);
             let canonical = String::from_utf8(mission.canonical()).unwrap();
-            let Some(mutation) = mutate(&mut rng, &mission, 50, 99) else {
+            let Some(mutation) = mutate(&mut rng, &mission, &contract) else {
                 continue;
             };
             let before: Vec<&str> = canonical.lines().collect();
@@ -300,11 +277,12 @@ mod tests {
 
     #[test]
     fn every_kind_of_mutation_gets_built() {
+        let contract = Contract::load().unwrap();
         let mut rng = Rng::from_seed(88);
         let mut kinds = std::collections::BTreeSet::new();
         for _ in 0..4_000 {
-            let mission = Mission::draw(&mut rng, 50);
-            if let Some(mutation) = mutate(&mut rng, &mission, 50, 99) {
+            let mission = Mission::draw(&mut rng, &contract);
+            if let Some(mutation) = mutate(&mut rng, &mission, &contract) {
                 kinds.insert(mutation.kind);
             }
         }

@@ -14,20 +14,43 @@
 //! is Q4. Both are open questions, and a generator that emitted them would be
 //! testing something the contract has not decided.
 
+use crate::contract::Grammar;
 use crate::mission::Mission;
 use crate::rng::Rng;
 
-const RUNS: [&str; 5] = [" ", "  ", "\t", " \t", "\t "];
-const EDGES: [&str; 4] = ["", " ", "\t", "  "];
+/// The ways a separator can be written, built from the grammar's own `ws`
+/// production rather than from a list somebody typed: every single separator,
+/// every separator doubled, and every ordered pair of them, because `ws` is a
+/// run of one or more.
+fn runs(grammar: &Grammar) -> Vec<String> {
+    let mut runs = Vec::new();
+    for &first in &grammar.separators {
+        runs.push(first.to_string());
+        runs.push(format!("{first}{first}"));
+        for &second in &grammar.separators {
+            if first != second {
+                runs.push(format!("{first}{second}"));
+            }
+        }
+    }
+    runs
+}
+
+/// What `ows` admits: nothing, or any run.
+fn edges(grammar: &Grammar) -> Vec<String> {
+    let mut edges = vec![String::new()];
+    edges.extend(runs(grammar));
+    edges
+}
 
 pub struct Spelling {
-    crlf: bool,
+    ending: String,
     omit_final_eol: bool,
     blanks_before_grid: u32,
     /// Drawn per line, and cycled, so one rendering carries several.
-    runs: Vec<&'static str>,
-    leading: Vec<&'static str>,
-    trailing: Vec<&'static str>,
+    runs: Vec<String>,
+    leading: Vec<String>,
+    trailing: Vec<String>,
     zeros: Vec<usize>,
     blanks_after_block: Vec<u32>,
     /// Blank separator lines are sometimes whitespace rather than nothing,
@@ -39,39 +62,52 @@ impl Spelling {
     /// The spelling with nothing optional in it. A test fixture: the mode
     /// itself uses `Mission::canonical`, and the two are asserted equal.
     #[cfg(test)]
-    pub fn plain() -> Self {
+    pub fn plain(grammar: &Grammar) -> Self {
         Self {
-            crlf: false,
+            ending: grammar.line_endings[0].clone(),
             omit_final_eol: false,
             blanks_before_grid: 0,
-            runs: vec![" "],
-            leading: vec![""],
-            trailing: vec![""],
+            runs: vec![grammar.separators[0].to_string()],
+            leading: vec![String::new()],
+            trailing: vec![String::new()],
             zeros: vec![0],
             blanks_after_block: vec![0],
             blank_is_whitespace: false,
         }
     }
 
-    pub fn draw(rng: &mut Rng) -> Self {
-        let many = |rng: &mut Rng, pool: &[&'static str]| -> Vec<&'static str> {
-            (0..4).map(|_| *rng.pick(pool)).collect()
+    pub fn draw(rng: &mut Rng, grammar: &Grammar) -> Self {
+        let many = |rng: &mut Rng, pool: &[String]| -> Vec<String> {
+            (0..4).map(|_| rng.pick(pool).clone()).collect()
         };
+        let runs = runs(grammar);
+        let edges = edges(grammar);
         Self {
-            crlf: rng.chance(2),
+            // One ending per input: mixing them within one input is Q1.
+            ending: rng.pick(&grammar.line_endings).clone(),
             omit_final_eol: rng.chance(3),
             blanks_before_grid: rng.below(3),
-            runs: many(rng, &RUNS),
-            leading: many(rng, &EDGES),
-            trailing: many(rng, &EDGES),
+            runs: many(rng, &runs),
+            leading: many(rng, &edges),
+            trailing: many(rng, &edges),
             zeros: (0..4).map(|_| rng.below(3) as usize).collect(),
             blanks_after_block: (0..4).map(|_| rng.below(3)).collect(),
             blank_is_whitespace: rng.chance(2),
         }
     }
 
+    /// A blank line is whitespace or nothing, and the whitespace has to come
+    /// from the grammar too.
+    fn blank(&self) -> &str {
+        if self.blank_is_whitespace {
+            &self.runs[0]
+        } else {
+            ""
+        }
+    }
+
     fn run(&self, line: usize) -> &str {
-        self.runs[line % self.runs.len()]
+        &self.runs[line % self.runs.len()]
     }
 
     fn number(&self, line: usize, value: u32) -> String {
@@ -81,8 +117,8 @@ impl Spelling {
     fn wrap(&self, line: usize, content: &str) -> String {
         format!(
             "{}{content}{}",
-            self.leading[line % self.leading.len()],
-            self.trailing[line % self.trailing.len()]
+            &self.leading[line % self.leading.len()],
+            &self.trailing[line % self.trailing.len()]
         )
     }
 }
@@ -90,11 +126,7 @@ impl Spelling {
 /// Write a mission down in one of the ways the contract permits.
 pub fn render(mission: &Mission, spelling: &Spelling) -> Vec<u8> {
     let mut lines: Vec<String> = Vec::new();
-    let blank = if spelling.blank_is_whitespace {
-        "  "
-    } else {
-        ""
-    };
+    let blank = spelling.blank();
 
     for _ in 0..spelling.blanks_before_grid {
         lines.push(blank.to_string());
@@ -138,7 +170,7 @@ pub fn render(mission: &Mission, spelling: &Spelling) -> Vec<u8> {
         }
     }
 
-    let ending = if spelling.crlf { "\r\n" } else { "\n" };
+    let ending = spelling.ending.as_str();
     let mut rendered = String::new();
     for (index, line) in lines.iter().enumerate() {
         rendered.push_str(line);
@@ -195,25 +227,31 @@ pub fn permitted(rendered: &[u8]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{Spelling, permitted, render};
+    use crate::contract::{Contract, Grammar};
     use crate::mission::Mission;
     use crate::rng::Rng;
 
     #[test]
     fn the_plain_spelling_is_the_canonical_one() {
+        let contract = Contract::load().unwrap();
         let mut rng = Rng::from_seed(5);
         for _ in 0..200 {
-            let mission = Mission::draw(&mut rng, 50);
-            assert_eq!(render(&mission, &Spelling::plain()), mission.canonical());
+            let mission = Mission::draw(&mut rng, &contract);
+            assert_eq!(
+                render(&mission, &Spelling::plain(&contract.grammar)),
+                mission.canonical()
+            );
         }
     }
 
     #[test]
     fn every_drawn_spelling_says_the_same_mission() {
+        let contract = Contract::load().unwrap();
         let mut rng = Rng::from_seed(20_260_922);
         for _ in 0..400 {
-            let mission = Mission::draw(&mut rng, 50);
+            let mission = Mission::draw(&mut rng, &contract);
             for _ in 0..8 {
-                let rendered = render(&mission, &Spelling::draw(&mut rng));
+                let rendered = render(&mission, &Spelling::draw(&mut rng, &contract.grammar));
                 assert_eq!(
                     Mission::read_back(&rendered).as_ref(),
                     Ok(&mission),
@@ -226,15 +264,41 @@ mod tests {
 
     #[test]
     fn no_drawn_spelling_strays_into_an_open_question() {
+        let contract = Contract::load().unwrap();
         let mut rng = Rng::from_seed(99);
         for _ in 0..400 {
-            let mission = Mission::draw(&mut rng, 50);
+            let mission = Mission::draw(&mut rng, &contract);
             for _ in 0..8 {
-                let rendered = render(&mission, &Spelling::draw(&mut rng));
+                let rendered = render(&mission, &Spelling::draw(&mut rng, &contract.grammar));
                 permitted(&rendered).unwrap_or_else(|why| {
                     panic!("{why}: {:?}", String::from_utf8_lossy(&rendered))
                 });
             }
+        }
+    }
+
+    #[test]
+    fn a_grammar_with_one_separator_never_renders_another() {
+        let contract = Contract::load().unwrap();
+        // The proof that the pools are derived and not typed: narrow `ws` to
+        // spaces alone and no rendering contains a tab, with nothing in this
+        // module edited.
+        let grammar = Grammar {
+            separators: vec![' '],
+            line_endings: vec!["\n".to_string()],
+            orientations: vec!['N', 'E', 'S', 'W'],
+            instructions: vec!['L', 'R', 'F'],
+        };
+        let mut rng = Rng::from_seed(21);
+        for _ in 0..200 {
+            let mission = Mission::draw(&mut rng, &contract);
+            let rendered = render(&mission, &Spelling::draw(&mut rng, &grammar));
+            assert!(
+                !rendered.contains(&b'\t'),
+                "a tab appeared under a grammar that does not admit one: {:?}",
+                String::from_utf8_lossy(&rendered)
+            );
+            assert!(!rendered.contains(&b'\r'), "a carriage return appeared");
         }
     }
 

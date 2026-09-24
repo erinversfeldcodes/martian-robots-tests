@@ -27,13 +27,6 @@ pub struct Divergence {
 }
 
 /// Require a program to agree with itself.
-///
-/// The contract rules a mission's framing meaningless: whitespace runs, line
-/// endings, the final end-of-line, blank separators, leading zeros. So every
-/// legal spelling of one mission must produce the same bytes. No reference
-/// implementation is needed to ask that question — which makes this the one
-/// generated mode that still bites when the suite and the program under test
-/// share a wrong belief.
 pub fn spelling_differential(
     implementation: &Path,
     contract: &Contract,
@@ -43,12 +36,12 @@ pub fn spelling_differential(
     let mut divergences = Vec::new();
 
     for _ in 0..budget.missions {
-        let mission = Mission::draw(&mut rng, contract.limits.max_coordinate);
+        let mission = Mission::draw(&mut rng, contract);
         let canonical = mission.canonical();
         let expected = answer(implementation, &canonical)?;
 
         for _ in 1..budget.spellings {
-            let rendered = spelling::render(&mission, &Spelling::draw(&mut rng));
+            let rendered = spelling::render(&mission, &Spelling::draw(&mut rng, &contract.grammar));
 
             // The generator checks itself on every run, not only in its own
             // tests. A spelling that broke the grammar would turn this gate
@@ -79,10 +72,6 @@ pub fn spelling_differential(
     Ok(divergences)
 }
 
-/// What the program says about one rendering. A drawn mission is valid by
-/// construction, so anything but a clean exit is the program's answer to a
-/// question this mode did not mean to ask, and is reported as a divergence
-/// rather than silently compared.
 fn answer(implementation: &Path, input: &[u8]) -> Result<Vec<u8>, String> {
     let seen = observe(implementation, &[], input, TIMEOUT)?;
     if seen.exited_zero() {
@@ -94,9 +83,6 @@ fn answer(implementation: &Path, input: &[u8]) -> Result<Vec<u8>, String> {
 
 pub struct PropertyRun {
     pub names: Vec<&'static str>,
-    /// How many missions each property actually evaluated. A predicate that
-    /// never fires reads exactly like one that always holds, which is how a
-    /// mode can report green while proving nothing.
     pub fired: Vec<u32>,
     pub violations: Vec<String>,
     pub missions: u32,
@@ -119,7 +105,7 @@ pub fn properties(
     let mut violations = Vec::new();
 
     for _ in 0..budget.properties {
-        let mission = Mission::draw_shaped(&mut rng, contract.limits.max_coordinate);
+        let mission = Mission::draw_shaped(&mut rng, contract);
         let input = mission.canonical();
         let said = answer(implementation, &input)?;
 
@@ -151,7 +137,7 @@ pub fn properties(
             ));
         }
 
-        let longer = mission.with_another_robot(&mut rng);
+        let longer = mission.with_another_robot(&mut rng, contract);
         if !longer.every_robot_starts_on_the_grid() {
             return Err(format!(
                 "the generator built an invalid mission: {}",
@@ -193,13 +179,6 @@ pub struct RejectionRun {
     pub failures: Vec<String>,
 }
 
-/// Break valid missions on purpose and check the rejection obligations over a
-/// much larger space than a catalogue can enumerate.
-///
-/// The expectation is derived from how each mutation was built, never from
-/// what the program said, and the diagnostic is judged rather than ignored: a
-/// mode that checks only the exit code and an empty stdout lets a program
-/// reject in silence.
 pub fn rejections(
     implementation: &Path,
     contract: &Contract,
@@ -210,13 +189,8 @@ pub fn rejections(
     let mut run = 0;
 
     for _ in 0..budget.rejections {
-        let mission = Mission::draw(&mut rng, contract.limits.max_coordinate);
-        let Some(mutation) = mutation::mutate(
-            &mut rng,
-            &mission,
-            contract.limits.max_coordinate,
-            contract.limits.max_instructions,
-        ) else {
+        let mission = Mission::draw(&mut rng, contract);
+        let Some(mutation) = mutation::mutate(&mut rng, &mission, contract) else {
             continue;
         };
         run += 1;
@@ -243,13 +217,6 @@ pub struct Disagreement {
 
 /// Compare answers with a second implementation written from the same
 /// contract.
-///
-/// This is the only mode that catches a plainly wrong answer to a mixed
-/// instruction string - a robot one cell east of where it belongs agrees with
-/// itself across every respelling and satisfies every invariant. What it
-/// proves is agreement: a disagreement is a defect in the program under test,
-/// or a place where the contract admits two readings. Both are findings, and
-/// neither side is automatically the wrong one.
 pub fn differential(
     implementation: &Path,
     contract: &Contract,
@@ -259,7 +226,7 @@ pub fn differential(
     let mut disagreements = Vec::new();
 
     for _ in 0..budget.differential {
-        let mission = Mission::draw_busy(&mut rng, contract.limits.max_coordinate);
+        let mission = Mission::draw_busy(&mut rng, contract);
         if !mission.is_valid(
             contract.limits.max_coordinate,
             contract.limits.max_instructions,

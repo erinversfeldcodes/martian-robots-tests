@@ -1,14 +1,6 @@
-//! A mission as structure, kept apart from any way of writing it down.
-//!
-//! The contract rules six things about how a mission is spelled to be
-//! meaningless — whitespace runs, line endings, the final end-of-line, blank
-//! separator lines, leading zeros, blanks before the grid line. A generator
-//! that draws a mission and a spelling as separate values can require every
-//! spelling of one mission to produce the same answer, which is a question no
-//! hand-written case can ask.
-
 use std::fmt::Write as _;
 
+use crate::contract::Contract;
 use crate::rng::Rng;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,8 +19,6 @@ pub struct Robot {
 }
 
 impl Mission {
-    /// The one spelling with nothing optional in it: single spaces, LF, a
-    /// final end-of-line, no blanks, no leading zeros.
     pub fn canonical(&self) -> Vec<u8> {
         let mut text = format!("{} {}\n", self.max_x, self.max_y);
         for robot in &self.robots {
@@ -41,20 +31,12 @@ impl Mission {
         text.into_bytes()
     }
 
-    /// Read a mission back out of any legal spelling of it.
-    ///
-    /// This is how the renderer checks itself on every run rather than only in
-    /// its own tests. A spelling that quietly broke the grammar would turn a
-    /// valid-mission gate into a rejection test — a weaker gate that still
-    /// reports green — and a spelling that changed the mission's meaning would
-    /// make a divergence the generator's fault rather than the program's.
     pub fn read_back(rendered: &[u8]) -> Result<Self, String> {
         let text = std::str::from_utf8(rendered).map_err(|error| error.to_string())?;
         let lines: Vec<&str> = text
             .split('\n')
             .map(|line| line.strip_suffix('\r').unwrap_or(line))
             .collect();
-        // A final end-of-line leaves an empty element behind that is not a line.
         let lines = match lines.split_last() {
             Some((&"", rest)) => rest,
             _ => &lines[..],
@@ -106,28 +88,20 @@ impl Mission {
         })
     }
 
-    /// A copy with one more robot, drawn on *this* mission's grid. Drawing it
-    /// on another one produces a start position off the world, which is an
-    /// invalid mission - and then a program that correctly refuses it looks
-    /// like a program that changed its mind.
-    pub fn with_another_robot(&self, rng: &mut Rng) -> Self {
+    pub fn with_another_robot(&self, rng: &mut Rng, contract: &Contract) -> Self {
         let mut longer = self.clone();
-        let mut robot = Robot::draw_on(rng, self.max_x, self.max_y);
-        robot.shape(rng);
+        let mut robot = Robot::draw_on(rng, self.max_x, self.max_y, contract);
+        robot.shape(rng, contract);
         longer.robots.push(robot);
         longer
     }
 
-    /// Every robot starts on the grid. The generator must maintain this, so
-    /// it is checked rather than assumed.
     pub fn every_robot_starts_on_the_grid(&self) -> bool {
         self.robots
             .iter()
             .all(|robot| robot.x <= self.max_x && robot.y <= self.max_y)
     }
 
-    /// Whether the contract would accept this mission. Used to check that a
-    /// mutation meant to produce invalid input actually did.
     pub fn is_valid(&self, max_coordinate: u32, max_instructions: u32) -> bool {
         self.max_x <= max_coordinate
             && self.max_y <= max_coordinate
@@ -142,17 +116,17 @@ impl Mission {
             })
     }
 
-    /// Draw a mission with something to simulate: several robots, longer
-    /// instruction strings, and a world small enough that they reach its
-    /// edges and leave scents for each other.
-    pub fn draw_busy(rng: &mut Rng, max_coordinate: u32) -> Self {
+    pub fn draw_busy(rng: &mut Rng, contract: &Contract) -> Self {
+        let max_coordinate = contract.limits.max_coordinate;
         let max_x = rng.below(6).min(max_coordinate);
         let max_y = rng.below(6).min(max_coordinate);
         let robots = (0..=rng.below(3))
             .map(|_| {
-                let mut robot = Robot::draw_on(rng, max_x, max_y);
+                let mut robot = Robot::draw_on(rng, max_x, max_y, contract);
                 let length = rng.below(16) as usize;
-                robot.instructions = (0..length).map(|_| *rng.pick(&['L', 'R', 'F'])).collect();
+                robot.instructions = (0..length)
+                    .map(|_| *rng.pick(&contract.grammar.instructions))
+                    .collect();
                 robot
             })
             .collect();
@@ -163,28 +137,20 @@ impl Mission {
         }
     }
 
-    /// Draw a mission whose robots are shaped so the strongest predicates
-    /// actually fire. A uniformly random instruction string is all-`F` with
-    /// probability 3^-n and turn-only just as rarely, so a properties mode fed
-    /// uniform missions runs, reports green, and never evaluates the two
-    /// predicates that pin an outcome exactly.
-    pub fn draw_shaped(rng: &mut Rng, max_coordinate: u32) -> Self {
-        let mut mission = Self::draw(rng, max_coordinate);
+    pub fn draw_shaped(rng: &mut Rng, contract: &Contract) -> Self {
+        let mut mission = Self::draw(rng, contract);
         for robot in &mut mission.robots {
-            robot.shape(rng);
+            robot.shape(rng, contract);
         }
         mission
     }
 
-    /// Draw a mission, biased small on purpose: what this mode tests is
-    /// framing, and small worlds with short instruction strings put more of
-    /// the interesting shapes — a robot with nothing to do, a mission with no
-    /// robots at all — into the corpus.
-    pub fn draw(rng: &mut Rng, max_coordinate: u32) -> Self {
+    pub fn draw(rng: &mut Rng, contract: &Contract) -> Self {
+        let max_coordinate = contract.limits.max_coordinate;
         let max_x = rng.below(6).min(max_coordinate);
         let max_y = rng.below(6).min(max_coordinate);
         let robots = (0..rng.below(4))
-            .map(|_| Robot::draw_on(rng, max_x, max_y))
+            .map(|_| Robot::draw_on(rng, max_x, max_y, contract))
             .collect();
         Self {
             max_x,
@@ -195,35 +161,41 @@ impl Mission {
 }
 
 impl Robot {
-    fn draw_on(rng: &mut Rng, max_x: u32, max_y: u32) -> Self {
+    fn draw_on(rng: &mut Rng, max_x: u32, max_y: u32, contract: &Contract) -> Self {
         let length = rng.below(7) as usize;
         Self {
             x: rng.below(max_x + 1),
             y: rng.below(max_y + 1),
-            facing: *rng.pick(&['N', 'E', 'S', 'W']),
-            instructions: (0..length).map(|_| *rng.pick(&['L', 'R', 'F'])).collect(),
+            // The letters come from the grammar: a vocabulary written down
+            // here would be a second copy of one the contract already states.
+            facing: *rng.pick(&contract.grammar.orientations),
+            instructions: (0..length)
+                .map(|_| *rng.pick(&contract.grammar.instructions))
+                .collect(),
         }
     }
 
-    /// Bias an instruction string toward the degenerate shapes the strongest
-    /// predicates need. A uniformly random string is all-`F` with probability
-    /// 3^-n, so without this the two predicates that pin an outcome exactly
-    /// would almost never evaluate.
-    fn shape(&mut self, rng: &mut Rng) {
+    fn shape(&mut self, rng: &mut Rng, contract: &Contract) {
         let length = self.instructions.len();
+        // Forward is the instruction that moves, so it is the one the
+        // degenerate shapes are built from; the rest turn.
+        let forward = 'F';
+        let turns: Vec<char> = contract
+            .grammar
+            .instructions
+            .iter()
+            .copied()
+            .filter(|&step| step != forward)
+            .collect();
         self.instructions = match rng.below(4) {
-            0 => "F".repeat(length),
-            1 => (0..length).map(|_| *rng.pick(&['L', 'R'])).collect(),
+            0 => forward.to_string().repeat(length),
+            1 => (0..length).map(|_| *rng.pick(&turns)).collect(),
             2 => String::new(),
             _ => self.instructions.clone(),
         };
     }
 }
 
-/// Split on the only separators the grammar has. Anything else - a
-/// no-break space, a form feed, a stray carriage return - stays glued to the
-/// token beside it and fails to parse, which is what the contract says should
-/// happen to it.
 fn tokens(line: &str) -> Vec<&str> {
     line.split([' ', '\t'])
         .filter(|part| !part.is_empty())
@@ -239,6 +211,7 @@ fn number(token: &str) -> Result<u32, String> {
 #[cfg(test)]
 mod tests {
     use super::{Mission, Robot};
+    use crate::contract::Contract;
     use crate::rng::Rng;
 
     #[test]
@@ -284,9 +257,10 @@ mod tests {
 
     #[test]
     fn every_drawn_mission_reads_back_as_itself() {
+        let contract = Contract::load().unwrap();
         let mut rng = Rng::from_seed(20_260_922);
         for _ in 0..500 {
-            let mission = Mission::draw(&mut rng, 50);
+            let mission = Mission::draw(&mut rng, &contract);
             assert_eq!(
                 Mission::read_back(&mission.canonical()).unwrap(),
                 mission,
@@ -297,9 +271,10 @@ mod tests {
 
     #[test]
     fn drawn_missions_stay_on_their_own_grid() {
+        let contract = Contract::load().unwrap();
         let mut rng = Rng::from_seed(7);
         for _ in 0..500 {
-            let mission = Mission::draw(&mut rng, 50);
+            let mission = Mission::draw(&mut rng, &contract);
             for robot in &mission.robots {
                 assert!(robot.x <= mission.max_x && robot.y <= mission.max_y);
             }

@@ -5,8 +5,6 @@ use crate::expect::{Diagnostic, Expect};
 
 pub struct Case {
     pub name: String,
-    /// The ruling ids this case pins. Empty where the contract's prose
-    /// governs and no numbered ruling does; `note` says which prose.
     pub enforces: Vec<String>,
     pub note: String,
     pub arguments: Vec<OsString>,
@@ -50,18 +48,12 @@ impl Builder {
             enforces: enforces.iter().map(ToString::to_string).collect(),
             note: note.to_string(),
             arguments: args.iter().map(OsString::from).collect(),
-            // Closed immediately for every invocation case. "Reads no stdin"
-            // is not observable from out here; feeding EOF at least means a
-            // program that wrongly reads it fails on output rather than
-            // hanging until the deadline.
             stdin: Vec::new(),
             expect,
         });
     }
 }
 
-/// The catalogue. Numbers come from the contract, never from here: a case
-/// that spells out a limit is a second copy of it that can go stale.
 pub fn catalogue(contract: &Contract) -> Vec<Case> {
     let mut build = Builder { cases: Vec::new() };
     missions(&mut build, contract);
@@ -467,8 +459,6 @@ fn invocation(build: &mut Builder) {
     );
 }
 
-/// Where a robot facing north ends up after this many left turns. Derived
-/// rather than written down, so the case follows the contract's limit.
 fn after_left_turns(turns: u32) -> &'static str {
     ["N", "W", "S", "E"][(turns % 4) as usize]
 }

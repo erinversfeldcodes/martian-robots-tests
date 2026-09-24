@@ -15,12 +15,16 @@ depends on this repository — this repository depends on nothing.
 |---|---|
 | `limits.toml` | the version, and the numbers the brief gives us |
 | `rulings.toml` | every question the brief leaves open, ruled or deliberately open |
-| `grammar.ebnf` | the input grammar, which the suite's generators read |
+| `grammar.ebnf` | the input grammar: the generators read their separators, line endings and vocabularies from it |
 | `template.md` | the narrative, with holes where the facts go |
 
 Nothing states a fact twice. The limits are defined once and read everywhere:
 by the prose, by the suite's boundary cases, and by an implementation that
-generates its constants from them. To read it as one document:
+generates its constants from them. The same goes for the grammar — what
+separates tokens, what ends a line, and which letters the two vocabularies
+hold are parsed out of `grammar.ebnf`, so the generators cannot drift from the
+published grammar, and the characters it does *not* admit are exactly what the
+rejection generator injects. To read it as one document:
 
 ```
 cargo run --quiet -- --contract
