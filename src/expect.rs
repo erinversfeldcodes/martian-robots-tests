@@ -9,6 +9,9 @@ pub enum Expect {
     Rejection(Diagnostic),
     Help,
     UsageError,
+    /// The version flag alone. Only that the version appears is pinned; the
+    /// text around it belongs to the implementation, as help's does.
+    Version(String),
 }
 
 #[derive(Debug, Default)]
@@ -89,6 +92,19 @@ impl Expect {
                 }
                 if seen.stdout.is_empty() {
                     return Some("no usage on stdout".to_string());
+                }
+                None
+            }
+            Self::Version(version) => {
+                if !seen.exited_zero() {
+                    return Some(format!("exit {}, expected 0", code_of(seen)));
+                }
+                let said = String::from_utf8_lossy(&seen.stdout);
+                if !said.contains(version.as_str()) {
+                    return Some(format!(
+                        "stdout does not report {version}: {}",
+                        show(&seen.stdout)
+                    ));
                 }
                 None
             }
@@ -275,6 +291,32 @@ mod tests {
                 .judge(&seen(b"", b"line 1: no grid line (R12)", Ending::Code(1)))
                 .is_some(),
             "a fabricated line number is wrong, not merely unhelpful"
+        );
+    }
+
+    #[test]
+    fn a_version_must_actually_name_the_version() {
+        let expect = Expect::Version("2.0.0".to_string());
+        assert!(
+            expect
+                .judge(&seen(
+                    b"martian-robots 2.0.0 (contract 2.0.0)\n",
+                    b"",
+                    Ending::Code(0)
+                ))
+                .is_none(),
+            "the text around the version belongs to the implementation"
+        );
+        assert!(
+            expect
+                .judge(&seen(b"1.0.0\n", b"", Ending::Code(0)))
+                .is_some(),
+            "a different version is a different contract"
+        );
+        assert!(
+            expect
+                .judge(&seen(b"2.0.0\n", b"", Ending::Code(1)))
+                .is_some()
         );
     }
 

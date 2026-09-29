@@ -32,8 +32,8 @@ ruling = "Valid: a 1x1 world consisting of cell (0,0)."
 id = "R4"
 status = "ruled"
 question = "Whitespace tolerance?"
-ruling = "Runs of spaces and tabs separate tokens; leading and trailing whitespace on a line is ignored; blank lines between robot blocks are ignored."
-rationale = "The brief's own sample input contains blank lines between blocks."
+ruling = "Runs of spaces and tabs separate tokens; leading and trailing spaces and tabs on a line are ignored; blank lines between robot blocks are ignored. Spaces and tabs are the only whitespace this contract has - they are what `ws` admits in grammar.ebnf - so any other character is not whitespace here, and a line carrying one does not match its production."
+rationale = "The brief's own sample input contains blank lines between blocks. The third clause is stated rather than left to the grammar because a reader who takes \"whitespace\" at its ordinary meaning would admit a no-break space at a line edge while refusing it between tokens, which is not a coherent reading of anything."
 
 [[ruling]]
 id = "R5"
@@ -83,8 +83,9 @@ ruling = "Accept LF and CRLF on input; emit LF only."
 [[ruling]]
 id = "R12"
 status = "ruled"
-question = "Duplicate or extra tokens on a line, such as `1 1 E X`?"
-ruling = "Invalid input: lines must match the grammar exactly once whitespace is normalised."
+question = "A line that does not match its production - a token too many, a token too few, or a token that is not what the production names?"
+ruling = "Invalid input: every line must match its production exactly, once runs of spaces and tabs are normalised. A surplus token (`1 1 E X`), a missing one (`1 1`), and a token of the wrong shape (`5x` where a number belongs) are all this ruling."
+rationale = "Stated as a rule about productions rather than about surplus tokens, because §2.5 only obliges a diagnostic to carry a tag where a numbered ruling governs. If this ruling covered only surplus tokens, a short line and a malformed number would be governed by nothing, and two implementations could disagree about whether a tag was owed at all."
 
 [[ruling]]
 id = "R13"
@@ -171,6 +172,13 @@ ruling = "Every violation found in one pass: each line that breaks a rule on its
 rationale = "The unit is the line, so one diagnostic for an offending line satisfies this however many rules that line breaks. A violation that can only be judged against another, invalid line - an off-grid start measured against an unreadable grid line - need not be reported."
 
 [[ruling]]
+id = "R26"
+status = "ruled"
+question = "How does an implementation report which contract version it implements?"
+ruling = "`--version`, as the sole argument, prints text containing the contract version to stdout, exits 0, and reads no stdin. Given alongside any other argument it is a usage error, per R21."
+rationale = "§2.7 obliges an implementation to report its version, and before this ruling there was nowhere to report it: R21 made every argument but a help flag a usage error, so the obligation could not be satisfied by a conforming program. Only containing the version is pinned - the text around it is implementation-chosen, as help's is - which is enough for a suite to refuse an implementation built against a different major."
+
+[[ruling]]
 id = "Q1"
 status = "open"
 question = "Mixed LF and CRLF within one input?"
@@ -203,8 +211,8 @@ note = "A position line ending `1 1 EE` has three tokens, so R12's \"exactly x y
 [[ruling]]
 id = "Q6"
 status = "open"
-question = "Whitespace that is neither a space nor a tab?"
-note = "R4 names spaces and tabs as the only separators, so a non-breaking space inside a line is not a separator and the line is invalid. Whether the diagnostic should treat it as a bad separator or as an unknown character is unstated."
+question = "How should a diagnostic characterise whitespace that is neither a space nor a tab?"
+note = "That such a line is invalid is R4, not an open question. What is open is the characterisation: a bad separator, or a character outside the vocabulary. R4, R12 and R7 can each be read as governing, and §2.5 asks for one governing tag rather than a particular one, so any of them satisfies it."
 
 [[ruling]]
 id = "Q7"
