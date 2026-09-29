@@ -181,6 +181,23 @@ stdout and some diagnostic, with any non-zero exit; a diagnostic must name its
 line where one is attributable and must not name one where none is; help output
 must exist, and no ruling constrains its wording, so neither does the suite.
 
+## The control
+
+`src/bin/probe.rs` is a program built to conform, and the suite is pointed at
+it by its own tests. Every other fixture is wrong on purpose and proves a check
+can go red; this one is right on purpose and proves the checks are not red for
+a program that has done nothing wrong.
+
+It is deliberately eccentric everywhere the contract is silent — it exits 7
+rather than 1, writes its diagnostics with the ruling first and the line last,
+never says the word "usage", and reports its version in a sentence. A case that
+fails the probe has pinned something the contract left free, which is the one
+failure a suite cannot see from inside: over-pinning looks exactly like a
+thorough gate until somebody tries to satisfy it.
+
+It parses and diagnoses; the simulation is the suite's own reference, because a
+third simulator would be a third chance to be wrong about the same section.
+
 ## Scope
 
 The command-line surface only: text on stdin, text on stdout, diagnostics on
