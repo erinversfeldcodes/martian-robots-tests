@@ -268,7 +268,7 @@ fn diagnostics(build: &mut Builder, contract: &Contract) {
          its first problem is the only thing this case catches",
         format!("5 3\n1 1 e\n\n\n{over} 1 E\n\n"),
         Expect::Rejection(Diagnostic {
-            required: vec!["line 2".to_string(), "line 5".to_string()],
+            lines: vec![2, 5],
             any_of: Vec::new(),
             forbids_a_line_reference: false,
         }),

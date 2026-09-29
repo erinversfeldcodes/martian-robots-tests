@@ -16,7 +16,10 @@ pub enum Expect {
 
 #[derive(Debug, Default)]
 pub struct Diagnostic {
-    pub required: Vec<String>,
+    /// Every input line the diagnostic must name. §2.5 fixes the form as
+    /// `line N`, so a number is matched as a whole: `line 19` does not answer
+    /// a demand for `line 1`.
+    pub lines: Vec<usize>,
     pub any_of: Vec<String>,
     pub forbids_a_line_reference: bool,
 }
@@ -24,7 +27,7 @@ pub struct Diagnostic {
 impl Diagnostic {
     pub fn at_line(line: usize, tags: &[&str]) -> Self {
         Self {
-            required: vec![format!("line {line}")],
+            lines: vec![line],
             any_of: tags.iter().map(|tag| format!("({tag})")).collect(),
             forbids_a_line_reference: false,
         }
@@ -32,7 +35,7 @@ impl Diagnostic {
 
     pub fn tagged(tags: &[&str]) -> Self {
         Self {
-            required: Vec::new(),
+            lines: Vec::new(),
             any_of: tags.iter().map(|tag| format!("({tag})")).collect(),
             forbids_a_line_reference: false,
         }
@@ -40,7 +43,7 @@ impl Diagnostic {
 
     pub fn without_a_line(tags: &[&str]) -> Self {
         Self {
-            required: Vec::new(),
+            lines: Vec::new(),
             any_of: tags.iter().map(|tag| format!("({tag})")).collect(),
             forbids_a_line_reference: true,
         }
@@ -129,16 +132,17 @@ impl Expect {
 
 impl Diagnostic {
     fn judge(&self, stderr: &str) -> Option<String> {
-        for needle in &self.required {
-            if !stderr.contains(needle.as_str()) {
-                return Some(format!("diagnostic does not name {needle:?}"));
+        let named = line_references(stderr);
+        for line in &self.lines {
+            if !named.contains(line) {
+                return Some(format!(
+                    "diagnostic does not name line {line}; it names {named:?}"
+                ));
             }
         }
-        if self.forbids_a_line_reference
-            && let Some(reference) = line_reference(stderr)
-        {
+        if self.forbids_a_line_reference && !named.is_empty() {
             return Some(format!(
-                "diagnostic names {reference:?}, and no line is attributable"
+                "diagnostic names line {named:?}, and no line is attributable"
             ));
         }
         if !self.any_of.is_empty() && !self.any_of.iter().any(|tag| stderr.contains(tag.as_str())) {
@@ -148,17 +152,38 @@ impl Diagnostic {
     }
 }
 
-fn line_reference(stderr: &str) -> Option<String> {
-    let mut rest = stderr;
-    while let Some(at) = rest.find("line ") {
-        let after = &rest[at + "line ".len()..];
-        let digits: String = after.chars().take_while(char::is_ascii_digit).collect();
-        if !digits.is_empty() {
-            return Some(format!("line {digits}"));
+/// Every line a diagnostic names, as whole numbers.
+///
+/// Whole numbers because `line 19` is not an answer to a demand for `line 1`,
+/// and a word boundary because "outline 3" names no line. A diagnostic stays
+/// free to use the word without naming one: "no grid line" names nothing.
+fn line_references(stderr: &str) -> Vec<usize> {
+    let mut named = Vec::new();
+    let bytes = stderr.as_bytes();
+    let mut from = 0;
+
+    while let Some(offset) = stderr[from..].find("line ") {
+        let at = from + offset;
+        let starts_a_word = at == 0 || !bytes[at - 1].is_ascii_alphanumeric();
+        let after = at + "line ".len();
+        let digits: String = stderr[after..]
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect();
+
+        if starts_a_word && !digits.is_empty() {
+            let whole = stderr[after + digits.len()..]
+                .chars()
+                .next()
+                .is_none_or(|next| !next.is_ascii_digit());
+            if whole && let Ok(line) = digits.parse() {
+                named.push(line);
+            }
         }
-        rest = after;
+        from = after;
     }
-    None
+
+    named
 }
 
 fn code_of(seen: &Observation) -> String {
@@ -274,6 +299,33 @@ mod tests {
             expect
                 .judge(&seen(b"", b"line 9: off the world (R1)", Ending::Code(1)))
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn a_line_number_is_matched_whole() {
+        let expect = Expect::Rejection(Diagnostic::at_line(1, &["R5"]));
+        assert!(
+            expect
+                .judge(&seen(b"", b"line 19: too big (R5)", Ending::Code(1)))
+                .is_some(),
+            "line 19 is not an answer to a demand for line 1"
+        );
+        assert!(
+            expect
+                .judge(&seen(b"", b"line 1: too big (R5)", Ending::Code(1)))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn the_word_line_inside_another_word_names_nothing() {
+        let expect = Expect::Rejection(Diagnostic::without_a_line(&[]));
+        assert!(
+            expect
+                .judge(&seen(b"", b"outline 3 is malformed", Ending::Code(1)))
+                .is_none(),
+            "outline 3 names no input line"
         );
     }
 

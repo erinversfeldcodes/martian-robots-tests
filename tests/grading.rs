@@ -396,3 +396,102 @@ fn an_implementation_that_is_wrong_in_a_way_nothing_else_sees_is_caught() {
     );
     assert!(!report.conformed);
 }
+
+#[test]
+fn an_implementation_that_refuses_everything_cannot_pass_the_spelling_mode() {
+    let fixtures = Fixtures::new("refuses-all");
+    // Agrees with itself perfectly, because it says the same thing to every
+    // input. Folding a refusal into a sentinel and comparing it like an
+    // answer reported no divergences on a program that answers nothing.
+    let implementation = fixtures.implementation(
+        "refuses-all",
+        "cat > /dev/null\nprintf 'line 1: no (R5)\\n' >&2\nexit 1",
+    );
+
+    let report = grade_with(
+        &implementation,
+        &[
+            "--spelling",
+            "20",
+            "--properties",
+            "0",
+            "--rejections",
+            "0",
+            "--differential",
+            "0",
+            "--seed",
+            "1",
+        ],
+    );
+    assert!(
+        report.stdout.contains("REFUSED a valid mission"),
+        "a refused valid mission is not agreement:\n{}",
+        report.stdout
+    );
+    assert!(!report.conformed);
+}
+
+#[test]
+fn a_formatting_defect_is_reported_as_a_formatting_defect() {
+    let fixtures = Fixtures::new("zero-pads");
+    let implementation =
+        fixtures.implementation("zero-pads", "cat > /dev/null\nprintf '01 1 N\\n'");
+
+    let report = grade_with(
+        &implementation,
+        &[
+            "--spelling",
+            "0",
+            "--properties",
+            "10",
+            "--rejections",
+            "0",
+            "--differential",
+            "0",
+            "--seed",
+            "1",
+        ],
+    );
+    assert!(
+        report.stdout.contains("every line is canonical"),
+        "{}",
+        report.stdout
+    );
+    assert!(
+        !report.stdout.contains("VIOLATED one line per robot"),
+        "an unreadable answer says nothing about how many robots were reported:\n{}",
+        report.stdout
+    );
+}
+
+#[test]
+fn a_diagnostic_that_always_blames_one_line_is_caught() {
+    let fixtures = Fixtures::new("always-19");
+    // Blames line 19 for everything. `"line 19"` contains `"line 1"`, so a
+    // substring judge accepted it for every case that demanded line 1.
+    let implementation = fixtures.implementation(
+        "always-19",
+        "cat > /dev/null\nprintf 'line 19: something (R5)\\n' >&2\nexit 1",
+    );
+
+    let report = grade_with(
+        &implementation,
+        &[
+            "--spelling",
+            "0",
+            "--properties",
+            "0",
+            "--rejections",
+            "0",
+            "--differential",
+            "0",
+        ],
+    );
+    assert!(
+        report
+            .failure("a grid coordinate past the maximum is refused")
+            .is_some_and(|why| why.contains("does not name line 1")),
+        "a line number must be matched whole:\n{}",
+        report.stdout
+    );
+}

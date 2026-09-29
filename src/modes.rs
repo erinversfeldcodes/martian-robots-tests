@@ -19,6 +19,13 @@ pub struct Budget {
     pub seed: u64,
 }
 
+pub struct SpellingRun {
+    pub divergences: Vec<Divergence>,
+    /// Valid missions the program would not answer at all. Not a divergence -
+    /// nothing was compared - but not a pass either.
+    pub refused: Vec<Vec<u8>>,
+}
+
 pub struct Divergence {
     pub mission: Vec<u8>,
     pub against: Vec<u8>,
@@ -31,14 +38,18 @@ pub fn spelling_differential(
     implementation: &Path,
     contract: &Contract,
     budget: &Budget,
-) -> Result<Vec<Divergence>, String> {
+) -> Result<SpellingRun, String> {
     let mut rng = Rng::from_seed(budget.seed);
     let mut divergences = Vec::new();
+    let mut refused = Vec::new();
 
     for _ in 0..budget.missions {
         let mission = Mission::draw(&mut rng, contract);
         let canonical = mission.canonical();
-        let expected = answer(implementation, &canonical)?;
+        let Some(expected) = answer(implementation, &canonical)? else {
+            refused.push(canonical);
+            continue;
+        };
 
         for _ in 1..budget.spellings {
             let rendered = spelling::render(&mission, &Spelling::draw(&mut rng, &contract.grammar));
@@ -57,7 +68,8 @@ pub fn spelling_differential(
                 ));
             }
 
-            let got = answer(implementation, &rendered)?;
+            let got = answer(implementation, &rendered)?
+                .unwrap_or_else(|| b"<refused a spelling of a mission it answered>".to_vec());
             if got != expected {
                 divergences.push(Divergence {
                     mission: canonical.clone(),
@@ -69,16 +81,23 @@ pub fn spelling_differential(
         }
     }
 
-    Ok(divergences)
+    Ok(SpellingRun {
+        divergences,
+        refused,
+    })
 }
 
-fn answer(implementation: &Path, input: &[u8]) -> Result<Vec<u8>, String> {
+/// What the program said about one rendering, or `None` if it refused it.
+///
+/// A drawn mission is valid by construction, so a refusal is the program
+/// answering a question these modes did not ask. It used to be folded into a
+/// sentinel string and compared like any other answer, which meant a program
+/// that refused *everything* agreed with itself perfectly and the spelling
+/// mode reported no divergences. Refusals are now visible to each caller,
+/// which decides what they mean.
+fn answer(implementation: &Path, input: &[u8]) -> Result<Option<Vec<u8>>, String> {
     let seen = observe(implementation, &[], input, TIMEOUT)?;
-    if seen.exited_zero() {
-        Ok(seen.stdout)
-    } else {
-        Ok(format!("<refused a valid mission: {:?}>", seen.ending).into_bytes())
-    }
+    Ok(seen.exited_zero().then_some(seen.stdout))
 }
 
 pub struct PropertyRun {
@@ -107,7 +126,13 @@ pub fn properties(
     for _ in 0..budget.properties {
         let mission = Mission::draw_shaped(&mut rng, contract);
         let input = mission.canonical();
-        let said = answer(implementation, &input)?;
+        let Some(said) = answer(implementation, &input)? else {
+            violations.push(format!(
+                "a valid mission was refused, so nothing can be said about it\n      on {}",
+                show(&input)
+            ));
+            continue;
+        };
 
         for (index, verdict) in properties::check(&mission, &said).into_iter().enumerate() {
             match verdict {
@@ -125,7 +150,7 @@ pub fn properties(
         }
 
         let at = properties::NAMES.len();
-        let again = answer(implementation, &input)?;
+        let again = answer(implementation, &input)?.unwrap_or_default();
         fired[at] += 1;
         if again != said {
             violations.push(format!(
@@ -137,6 +162,12 @@ pub fn properties(
             ));
         }
 
+        // Only meaningful when there is a prefix to preserve: with no robots
+        // the comparison is empty against empty, and counting it would
+        // overstate what was judged.
+        if mission.robots.is_empty() {
+            continue;
+        }
         let longer = mission.with_another_robot(&mut rng, contract);
         if !longer.every_robot_starts_on_the_grid() {
             return Err(format!(
@@ -146,7 +177,7 @@ pub fn properties(
         }
         {
             fired[at + 1] += 1;
-            let extended = answer(implementation, &longer.canonical())?;
+            let extended = answer(implementation, &longer.canonical())?.unwrap_or_default();
             let before = said.split_inclusive(|&byte| byte == b'\n').count();
             let kept: Vec<u8> = extended
                 .split_inclusive(|&byte| byte == b'\n')
@@ -239,7 +270,8 @@ pub fn differential(
 
         let input = mission.canonical();
         let expected = reference::run(&mission);
-        let got = answer(implementation, &input)?;
+        let got = answer(implementation, &input)?
+            .unwrap_or_else(|| b"<refused a valid mission>".to_vec());
         if got != expected {
             disagreements.push(Disagreement {
                 mission: input,
