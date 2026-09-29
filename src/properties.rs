@@ -28,8 +28,11 @@ pub fn check(mission: &Mission, stdout: &[u8]) -> Vec<Verdict> {
     let reports = match parse(stdout) {
         Ok(reports) => reports,
         Err(why) => {
+            // Exactly one failure: the lines are not canonical. Counting it
+            // against the line-count predicate as well reported a formatting
+            // defect as a missing robot, and doubled the violations.
             return vec![
-                Verdict::Violated(why.clone()),
+                Verdict::NotApplicable,
                 Verdict::Violated(why),
                 Verdict::NotApplicable,
                 Verdict::NotApplicable,

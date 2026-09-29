@@ -227,20 +227,25 @@ fn generated(
     quiet: bool,
     budget: &modes::Budget,
 ) -> Result<usize, String> {
-    let divergences = modes::spelling_differential(implementation, contract, budget)?;
-    for divergence in &divergences {
+    let spelling = modes::spelling_differential(implementation, contract, budget)?;
+    for divergence in &spelling.divergences {
         println!("DIVERGES on a legal respelling");
         println!("      mission:  {}", show(&divergence.mission));
         println!("      spelled:  {}", show(&divergence.against));
         println!("      expected: {}", show(&divergence.expected));
         println!("      got:      {}", show(&divergence.got));
     }
+    for refused in &spelling.refused {
+        println!("REFUSED a valid mission, so no spelling of it could be compared");
+        println!("      mission:  {}", show(refused));
+    }
     println!(
-        "spelling: {} mission(s) x {} rendering(s), seed {}, {} divergence(s)",
+        "spelling: {} mission(s) x {} rendering(s), seed {}, {} divergence(s), {} refused",
         budget.missions,
         budget.spellings,
         budget.seed,
-        divergences.len()
+        spelling.divergences.len(),
+        spelling.refused.len()
     );
 
     let properties = modes::properties(implementation, contract, budget)?;
@@ -284,7 +289,8 @@ fn generated(
         disagreements.len()
     );
 
-    Ok(divergences.len()
+    Ok(spelling.divergences.len()
+        + spelling.refused.len()
         + properties.violations.len()
         + rejections.failures.len()
         + disagreements.len())
