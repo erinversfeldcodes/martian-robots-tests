@@ -64,7 +64,7 @@ pub fn catalogue(contract: &Contract) -> Vec<Case> {
     diagnostics(&mut build, contract);
     bytes(&mut build);
     boundaries(&mut build, contract);
-    invocation(&mut build);
+    invocation(&mut build, contract);
     build.cases
 }
 
@@ -408,7 +408,7 @@ fn boundaries(build: &mut Builder, contract: &Contract) {
     );
 }
 
-fn invocation(build: &mut Builder) {
+fn invocation(build: &mut Builder, contract: &Contract) {
     build.invocation(
         "--help alone prints usage and exits 0",
         &["R20"],
@@ -423,6 +423,25 @@ fn invocation(build: &mut Builder) {
         "the short spelling is the same promise",
         &["-h"],
         Expect::Help,
+    );
+
+    build.invocation(
+        "--version alone reports the contract version",
+        &["R26"],
+        "§2.7 obliges an implementation to report the version it implements, \
+         and R26 is where it does so. Only that the version appears is pinned; \
+         the text around it is the implementation's own",
+        &["--version"],
+        Expect::Version(contract.version.clone()),
+    );
+
+    build.invocation(
+        "a version flag with another argument is a usage error",
+        &["R26"],
+        "the same rule a help flag follows: it reports only when it is the \
+         sole argument",
+        &["--version", "extra"],
+        Expect::UsageError,
     );
 
     build.invocation(

@@ -117,14 +117,20 @@ contract; the sentence around them is not.
 ### 2.6 Invocation
 
 The program is a stdin/stdout filter when invoked bare. Its argument surface is
-R20, R21, R22 and R24: a help flag alone prints usage to stdout and exits 0
-without reading stdin; anything else is a usage error on stderr with a non-zero
-exit; input that is not valid UTF-8 is invalid input under §2.4.
+R20, R21, R24 and R26: a help flag alone prints usage to stdout, exits 0, and
+reads no stdin; a version flag alone reports the contract version on the same
+terms; anything else — including either flag given alongside another argument —
+is a usage error on stderr with a non-zero exit and no stdout.
+
+Input that is not valid UTF-8 is invalid input under §2.4 (R22). That is a rule
+about stdin rather than about arguments, and is listed here only because it is
+the other thing a program must get right before it has parsed anything.
 
 ### 2.7 Versioning
 
 This contract carries a semver version, defined in `contract/limits.toml`, and
-an implementation reports the version it implements.
+an implementation reports the version it implements through the surface R26
+gives it.
 
 - A change that alters what input is accepted, or what output a given input
   produces, is a **major** bump. Implementations and suites pinned to the
@@ -158,3 +164,4 @@ tool can tell the difference between a question we answered and one we did not.
 | Version | Date | Change |
 |---|---|---|
 | 1.0.0 | 2026-09-22 | Initial contract for the command-line surface: the grammar and its framing rules, the simulation's semantics, the output format, the failure discipline, the content of diagnostics, the invocation surface, and rulings R1–R25. |
+| 2.0.0 | 2026-09-29 | Three places where the rule was not where a reader would look for it. R4 now says spaces and tabs in all three of its clauses and names the grammar, so the rejection of other whitespace no longer rests on Q6's note — Q6 keeps only the characterisation question, which is genuinely open. R12 is stated as a rule about productions rather than about surplus tokens, so a short line and a malformed number are governed rather than arguable. R26 gives §2.7's version obligation a surface to be satisfied by; before it, `--version` was a usage error and the sentence could not be met. Major, by §2.7's own test: R26 changes what an input produces, and R12 narrows the outputs a conforming implementation may give. |
