@@ -57,8 +57,8 @@ FAIL a grid coordinate past the maximum is refused
       rejected input must produce no stdout, got "1 1 E\n"
       stdin: "51 3\n"
       enforces: R5
-contract 1.0.0: 9 of 25 ruled question(s) enforced
-result: 18 case(s) run, 17 passed, 1 failed
+contract <version>: <n> of <n> ruled question(s) enforced
+result: <n> case(s) run, <n> passed, <n> failed
 ```
 
 The coverage line is deliberately unflattering: it counts the ruled questions
@@ -74,7 +74,7 @@ separators, a final line with or without its ending — and requires the same
 answer from all of them:
 
 ```
-spelling: 60 mission(s) x 4 rendering(s), seed 1, 0 divergence(s)
+spelling: <n> mission(s) x <n> rendering(s), seed <n>, <n> divergence(s)
 ```
 
 This asks a program to agree with itself, so it needs no reference
@@ -95,16 +95,17 @@ every robot at `0 0 N` agrees with itself perfectly. So the suite also states
 things that are true of an answer on its own, and checks those:
 
 ```
-        40 one line per robot, in input order
-        40 every line is canonical
-        32 every reported position is on the grid
-        25 a robot that cannot move reports where it started
-         6 a robot that only moves forward stops where the world stops it
-        12 no two robots are lost on the same cell
-        40 the same input twice gives the same answer
-        40 appending a robot does not change the robots before it
-properties: 40 mission(s), seed 1, 0 violation(s)
+      one line per robot, in input order
+      every line is canonical
+      every reported position is on the grid
+      a robot that cannot move reports where it started
+      a robot that only moves forward stops where the world stops it
+      no two robots are lost on the same cell
+      the same input twice gives the same answer
+      appending a robot does not change the robots before it
 ```
+
+Each is printed with the number of missions that actually evaluated it.
 
 None of these consults a second implementation, which is what makes them the
 answer to a suite and a program sharing a wrong belief. Two need no simulation
@@ -126,7 +127,7 @@ coordinate past a limit, a start off the world, a letter outside a vocabulary,
 a token too many or too few, a separator the grammar does not have.
 
 ```
-rejections: 31 mutation(s), seed 1, 0 failure(s)
+rejections: <n> mutation(s), seed <n>, <n> failure(s)
 ```
 
 Two things make this more than a fuzzer. The expected line and the admissible
@@ -147,7 +148,7 @@ Last, the suite compares answers with a second implementation written from the
 same contract:
 
 ```
-differential: 60 mission(s), seed 1, 0 disagreement(s)
+differential: <n> mission(s), seed <n>, <n> disagreement(s)
 ```
 
 This is the only mode that catches a plainly wrong answer to a mixed
