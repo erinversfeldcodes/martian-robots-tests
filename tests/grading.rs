@@ -495,3 +495,64 @@ fn a_diagnostic_that_always_blames_one_line_is_caught() {
         report.stdout
     );
 }
+
+#[test]
+fn a_program_built_to_conform_passes_everything() {
+    // The positive control. Every other fixture here is wrong on purpose and
+    // proves a check can go red; this one is right on purpose and proves the
+    // checks are not red for a program that has done nothing wrong. A suite
+    // cannot see that from inside: over-pinning looks exactly like a thorough
+    // gate until somebody tries to satisfy it.
+    let report = grade_with(
+        Path::new(env!("CARGO_BIN_EXE_probe")),
+        &[
+            "--spelling",
+            "30",
+            "--properties",
+            "30",
+            "--rejections",
+            "30",
+            "--differential",
+            "30",
+            "--seed",
+            "1",
+        ],
+    );
+    assert!(
+        report.conformed,
+        "the suite fails a program built to conform:\n{}",
+        report.stdout
+    );
+}
+
+#[test]
+fn the_control_stays_eccentric_where_the_contract_is_silent() {
+    // The control is only worth something while it keeps making the choices
+    // the contract leaves free *differently*. Made conventional, it would
+    // stop proving the suite accepts anything but one house style.
+    let probe = Path::new(env!("CARGO_BIN_EXE_probe"));
+
+    let refused = Command::new(probe)
+        .arg("--nonsense")
+        .output()
+        .expect("to run the probe");
+    assert_eq!(
+        refused.status.code(),
+        Some(7),
+        "the control should not exit 1, which is the code a suite might assume"
+    );
+    assert!(
+        !String::from_utf8_lossy(&refused.stderr)
+            .to_lowercase()
+            .contains("usage"),
+        "the control should not say the word a suite might look for"
+    );
+
+    let helped = Command::new(probe).arg("--help").output().expect("to run");
+    assert!(
+        !String::from_utf8_lossy(&helped.stdout)
+            .to_lowercase()
+            .contains("usage"),
+        "nor in its help"
+    );
+}

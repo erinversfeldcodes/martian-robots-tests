@@ -1,14 +1,4 @@
-mod cases;
-mod contract;
-mod expect;
-mod mission;
-mod modes;
-mod mutation;
-mod properties;
-mod reference;
-mod rng;
-mod run;
-mod spelling;
+use martian_robots_verify::{cases, contract, expect, modes, rng, run};
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;

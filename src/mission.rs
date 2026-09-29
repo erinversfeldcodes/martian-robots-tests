@@ -88,6 +88,7 @@ impl Mission {
         })
     }
 
+    #[must_use]
     pub fn with_another_robot(&self, rng: &mut Rng, contract: &Contract) -> Self {
         let mut longer = self.clone();
         let mut robot = Robot::draw_on(rng, self.max_x, self.max_y, contract);
@@ -117,13 +118,12 @@ impl Mission {
     }
 
     pub fn draw_busy(rng: &mut Rng, contract: &Contract) -> Self {
-        let max_coordinate = contract.limits.max_coordinate;
-        let max_x = rng.below(6).min(max_coordinate);
-        let max_y = rng.below(6).min(max_coordinate);
-        let robots = (0..=rng.below(3))
+        let max_x = axis(rng, contract.limits.max_coordinate);
+        let max_y = axis(rng, contract.limits.max_coordinate);
+        let robots = (0..=rng.below(5))
             .map(|_| {
                 let mut robot = Robot::draw_on(rng, max_x, max_y, contract);
-                let length = rng.below(16) as usize;
+                let length = steps(rng, contract.limits.max_instructions);
                 robot.instructions = (0..length)
                     .map(|_| *rng.pick(&contract.grammar.instructions))
                     .collect();
@@ -146,9 +146,8 @@ impl Mission {
     }
 
     pub fn draw(rng: &mut Rng, contract: &Contract) -> Self {
-        let max_coordinate = contract.limits.max_coordinate;
-        let max_x = rng.below(6).min(max_coordinate);
-        let max_y = rng.below(6).min(max_coordinate);
+        let max_x = axis(rng, contract.limits.max_coordinate);
+        let max_y = axis(rng, contract.limits.max_coordinate);
         let robots = (0..rng.below(4))
             .map(|_| Robot::draw_on(rng, max_x, max_y, contract))
             .collect();
@@ -162,7 +161,7 @@ impl Mission {
 
 impl Robot {
     fn draw_on(rng: &mut Rng, max_x: u32, max_y: u32, contract: &Contract) -> Self {
-        let length = rng.below(7) as usize;
+        let length = steps(rng, contract.limits.max_instructions);
         Self {
             x: rng.below(max_x + 1),
             y: rng.below(max_y + 1),
@@ -194,6 +193,33 @@ impl Robot {
             _ => self.instructions.clone(),
         };
     }
+}
+
+/// A grid axis, drawn in strata rather than uniformly.
+///
+/// Small worlds are where robots reach edges and leave scents for each other,
+/// so most draws stay there. But a corpus that only ever stays there cannot
+/// see a bound checked at one digit and not at two, or a coordinate held in
+/// something too small for the limit the contract declares. Those are ordinary
+/// bugs, and a generator capped below the limit is blind to all of them.
+fn axis(rng: &mut Rng, max_coordinate: u32) -> u32 {
+    match rng.below(10) {
+        0..=5 => rng.below(6).min(max_coordinate),
+        6..=8 => rng.below(max_coordinate + 1),
+        _ => max_coordinate,
+    }
+}
+
+/// An instruction count, in the same three strata and for the same reason: a
+/// program that stops after a fixed number of steps is invisible to a corpus
+/// whose strings are always shorter than the limit.
+fn steps(rng: &mut Rng, max_instructions: u32) -> usize {
+    let drawn = match rng.below(10) {
+        0..=5 => rng.below(8),
+        6..=8 => rng.below(max_instructions + 1),
+        _ => max_instructions,
+    };
+    drawn as usize
 }
 
 fn tokens(line: &str) -> Vec<&str> {
@@ -267,6 +293,46 @@ mod tests {
                 "{mission:?}"
             );
         }
+    }
+
+    #[test]
+    fn the_corpus_reaches_the_limits_the_contract_declares() {
+        let contract = Contract::load().unwrap();
+        let mut rng = Rng::from_seed(20_260_929);
+        let (mut widest, mut longest, mut most) = (0, 0, 0);
+        for _ in 0..400 {
+            let mission = Mission::draw_busy(&mut rng, &contract);
+            widest = widest.max(mission.max_x).max(mission.max_y);
+            most = most.max(mission.robots.len());
+            for robot in &mission.robots {
+                longest = longest.max(robot.instructions.len());
+            }
+        }
+        assert_eq!(
+            widest, contract.limits.max_coordinate,
+            "no mission reached the coordinate limit"
+        );
+        assert_eq!(
+            longest, contract.limits.max_instructions as usize,
+            "no robot reached the instruction limit"
+        );
+        assert!(most >= 4, "only {most} robot(s) in any mission");
+    }
+
+    #[test]
+    fn small_worlds_stay_the_common_case() {
+        // Scent only happens where robots reach edges, so widening the range
+        // must not drown out the worlds where the interesting interactions
+        // are.
+        let contract = Contract::load().unwrap();
+        let mut rng = Rng::from_seed(5);
+        let small = (0..400)
+            .filter(|_| {
+                let mission = Mission::draw(&mut rng, &contract);
+                mission.max_x <= 5 && mission.max_y <= 5
+            })
+            .count();
+        assert!(small > 100, "only {small} of 400 missions were small");
     }
 
     #[test]
