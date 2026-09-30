@@ -181,6 +181,17 @@ stdout and some diagnostic, with any non-zero exit; a diagnostic must name its
 line where one is attributable and must not name one where none is; help output
 must exist, and no ruling constrains its wording, so neither does the suite.
 
+## What a seed names
+
+A seed is a replay handle: a divergence prints one, and the same seed brings
+the same inputs back. That holds only while the generators stand still, so
+`tests/corpus.rs` writes down what one seed names — a readable descriptor per
+item, and a digest over the exact bytes to catch what a descriptor elides.
+
+Improving a generator is expected to fail those tests. The diff is the point:
+it makes replacing the meaning of every seed something somebody reviewed,
+rather than something that happened while nobody was looking.
+
 ## The control
 
 `src/bin/probe.rs` is a program built to conform, and the suite is pointed at
