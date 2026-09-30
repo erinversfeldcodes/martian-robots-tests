@@ -404,6 +404,19 @@ fn vocabulary(build: &mut Builder) {
 
 fn framing(build: &mut Builder) {
     build.case(
+        "a carriage return inside an unterminated final line ends nothing",
+        &["R19"],
+        "R19 refuses a carriage return that is not part of a line ending, and \
+         the final line is where a reader is most likely to have a second, \
+         separate path for deciding that - one that R14's implicit ending runs \
+         through. Found by measuring the conforming probe's coverage through \
+         this suite: the probe checks R19 in two places and the suite reached \
+         only one of them",
+        "5 3\n1 1 E\nR\rF",
+        Expect::Rejection(Diagnostic::at_line(3, &["R19", "R11"])),
+    );
+
+    build.case(
         "blank and whitespace-only lines before the grid line are ignored",
         &["R17", "R15"],
         "a line of only whitespace counts as blank, and blanks are admitted \
