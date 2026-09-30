@@ -12,6 +12,18 @@ impl Rng {
         Self { state: seed }
     }
 
+    /// The seed a run uses when nobody names one.
+    ///
+    /// Fixed, not the clock. A conformance gate whose corpus changes every
+    /// invocation is not a gate: a green run says nothing about the next one,
+    /// and a real failure arrives looking like a flake. Exploring a wider
+    /// corpus is a thing somebody asks for, with `--seed random`, rather than
+    /// the thing they get by default.
+    ///
+    /// It is the seed `tests/corpus.rs` writes down, so the inputs a bare run
+    /// draws are the ones somebody reviewed.
+    pub const DEFAULT_SEED: u64 = 20_260_930;
+
     /// A seed nobody chose, for the run whose job is to explore rather than
     /// to reproduce. It prints itself, so a failure is replayable.
     pub fn seed_from_the_clock() -> u64 {

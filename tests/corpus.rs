@@ -26,7 +26,9 @@ use martian_robots_verify::mutation;
 use martian_robots_verify::rng::Rng;
 use martian_robots_verify::spelling::{self, Spelling};
 
-const SEED: u64 = 20_260_930;
+/// The same seed a bare run of the suite uses, so the corpus written down
+/// here is the corpus a reader gets by default.
+const SEED: u64 = Rng::DEFAULT_SEED;
 
 /// FNV-1a. Not a security property — a short, stable name for a byte string,
 /// written out rather than depended on so the suite keeps no dependency for

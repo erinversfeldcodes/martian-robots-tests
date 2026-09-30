@@ -89,7 +89,18 @@ spelling: <n> mission(s) x <n> rendering(s), seed <n>, <n> divergence(s)
 This asks a program to agree with itself, so it needs no reference
 implementation and still bites when the suite and the program share a wrong
 belief. `--spelling <n>` sets how many missions; `--seed <n>` replays a
-corpus, and a run without one picks a seed and prints it.
+corpus.
+
+The seed is **fixed by default**, so two runs of the same code grade the same
+corpus and a green run says something about the next one. `--seed random`
+explores a wider corpus and prints the seed it chose, which is the seed to pass
+back. The default is the one `tests/corpus.rs` writes down, so the inputs a bare
+run draws are the ones somebody reviewed.
+
+A mode that is asked to run and judges nothing is the suite failing to run, not
+the implementation passing: it exits 2, the way a mistyped `--case` does. A
+budget small enough to build no mutation, or too small for any invariant to
+apply, used to print zeroes and exit 0.
 
 The generator checks itself on every run, not only in its own tests: each
 rendering must read back as the mission it came from, and must stay out of the

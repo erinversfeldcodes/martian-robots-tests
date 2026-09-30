@@ -18,7 +18,9 @@ Usage: martian-robots-verify --bin <path> [--quiet]
   --differential <n> missions to compare with a second implementation
                  written from the same contract (default 60)
   --seed <n>     the seed the generated missions come from, so a failure
-                 replays; a run without one picks and prints its own
+                 replays. Fixed by default, so two runs of the same code
+                 grade the same corpus; `--seed random` explores a wider one
+                 and prints the seed it chose
   --case <id>    run only the cases whose id starts with this, and none of
                  the generated modes. A group name on its own selects the
                  group: `--case scent` is every scent case
@@ -75,7 +77,16 @@ impl Task {
                 "--properties" => checks = number(args.next(), "--properties")?,
                 "--rejections" => breakages = number(args.next(), "--rejections")?,
                 "--differential" => against_reference = number(args.next(), "--differential")?,
-                "--seed" => seed = Some(number(args.next(), "--seed")?),
+                "--seed" => {
+                    let asked = args.next().ok_or("--seed needs a number or `random`")?;
+                    seed = Some(if asked == "random" {
+                        rng::Rng::seed_from_the_clock()
+                    } else {
+                        asked
+                            .parse()
+                            .map_err(|_| "--seed needs a number or `random`".to_string())?
+                    });
+                }
                 "--case" => only = Some(args.next().ok_or("--case needs an id")?),
                 other => return Err(format!("unknown argument: {other}")),
             }
@@ -101,7 +112,7 @@ impl Task {
                 rejections: u32::try_from(breakages).map_err(|_| "--rejections is too large")?,
                 differential: u32::try_from(against_reference)
                     .map_err(|_| "--differential is too large")?,
-                seed: seed.unwrap_or_else(rng::Rng::seed_from_the_clock),
+                seed: seed.unwrap_or(rng::Rng::DEFAULT_SEED),
             },
             only,
         })
