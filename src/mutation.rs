@@ -16,6 +16,10 @@ pub enum Expectation {
     /// Two framing rules can disagree about which line carries the defect,
     /// and §2.5 does not settle it, so only the ruling is required.
     Tagged(Vec<&'static str>),
+    /// Independent defects on separate lines, each governed by a ruling of
+    /// its own. R25 asks for every violation found in one pass, and no
+    /// single-defect mutation can ask for that.
+    Several(Vec<(usize, Vec<&'static str>)>),
 }
 
 /// How the mutation makes the input invalid, and therefore what must be true
@@ -66,6 +70,13 @@ pub fn mutate(rng: &mut Rng, mission: &Mission, contract: &Contract) -> Option<M
     // refuses, and no other family here notices.
     if rng.chance(4) {
         return break_the_whitespace(rng, mission, contract);
+    }
+
+    // Two independent defects, when there is more than one robot to put them
+    // on. Every other family breaks one thing, so nothing else in this mode
+    // asks a program to find a second.
+    if mission.robots.len() > 1 && rng.chance(5) {
+        return break_two_blocks(rng, mission, contract);
     }
 
     // A third of the time, break the shape of the input rather than the
@@ -208,6 +219,49 @@ fn break_the_whitespace(rng: &mut Rng, mission: &Mission, contract: &Contract) -
         kind,
         rendered,
         expectation: Expectation::At(at + 1, tags),
+    })
+}
+
+/// Two violations, on two different robots, each of which stands on its own.
+///
+/// R25's rationale excuses a violation that can only be judged against another
+/// invalid line, so both defects here are ones that need nothing else: a
+/// coordinate past the declared limit is past it whatever the world says, and
+/// a letter outside the instruction vocabulary is outside it whatever else is
+/// wrong. The two are governed by different rulings on purpose — one tag
+/// cannot answer for both, so a program that reports its first problem and
+/// stops is caught by the tags as well as by the line numbers.
+fn break_two_blocks(rng: &mut Rng, mission: &Mission, contract: &Contract) -> Option<Mutation> {
+    let text = String::from_utf8(mission.canonical()).ok()?;
+    let mut lines: Vec<String> = text.lines().map(ToString::to_string).collect();
+
+    // Two different robots, so the defects cannot land on one line.
+    let count = u32::try_from(mission.robots.len()).ok()?;
+    let first = rng.below(count) as usize;
+    let second = (first + 1 + rng.below(count - 1) as usize) % mission.robots.len();
+
+    let over = contract.limits.max_coordinate + 1;
+    let position = 1 + first * 2;
+    let robot = &mission.robots[first];
+    lines[position] = format!("{over} {} {}", robot.y, robot.facing);
+
+    // An orientation letter, which the grammar guarantees is not an
+    // instruction: the two vocabularies are disjoint, and reading the letter
+    // out of the contract beats writing down one that happens to be wrong.
+    let instructions = 2 + second * 2;
+    let outside = *rng.pick(&contract.grammar.orientations);
+    lines[instructions] = format!("{}{outside}", lines[instructions]);
+
+    let rendered = format!("{}\n", lines.join("\n")).into_bytes();
+    check(&rendered, &Invalidity::Grammar, contract)?;
+
+    Some(Mutation {
+        kind: "two independent problems, on two robots",
+        rendered,
+        expectation: Expectation::Several(vec![
+            (position + 1, vec!["R5", "R1"]),
+            (instructions + 1, vec!["R7", "R12"]),
+        ]),
     })
 }
 
@@ -553,7 +607,7 @@ mod tests {
                 kinds.insert(mutation.kind);
             }
         }
-        assert_eq!(kinds.len(), 25, "only built {kinds:?}");
+        assert_eq!(kinds.len(), 26, "only built {kinds:?}");
     }
 
     #[test]
@@ -575,11 +629,14 @@ mod tests {
                 continue;
             }
             checked += 1;
-            let tags = match &mutation.expectation {
-                Expectation::At(_, tags) | Expectation::Tagged(tags) => tags,
+            let tags: Vec<&&str> = match &mutation.expectation {
+                Expectation::At(_, tags) | Expectation::Tagged(tags) => tags.iter().collect(),
+                Expectation::Several(demands) => {
+                    demands.iter().flat_map(|(_, tags)| tags).collect()
+                }
             };
             assert!(
-                !tags.contains(&"R7"),
+                !tags.contains(&&"R7"),
                 "{:?} offers R7 on a line with no vocabulary token",
                 mutation.kind
             );

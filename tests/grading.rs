@@ -1100,3 +1100,70 @@ fn a_reader_whose_whitespace_came_from_its_language_is_caught() {
         report.stdout
     );
 }
+
+#[test]
+fn an_implementation_that_reports_only_its_first_problem_is_caught() {
+    let fixtures = Fixtures::new("first-problem");
+    // The conforming program with all but the first line of its diagnostics
+    // dropped. Everything else about it is right: the exit code, the stdout
+    // discipline, the ruling tags, the line it names. Collecting every error
+    // in one pass is the hardest thing in a parser, and this is what failing
+    // to do it looks like from outside.
+    let errors = fixtures.directory.join("stderr");
+    let implementation = fixtures.implementation(
+        "first-problem",
+        &format!(
+            "{} \"$@\" 2> {errors}; code=$?\nhead -1 {errors} >&2\nexit $code",
+            Path::new(env!("CARGO_BIN_EXE_probe")).display(),
+            errors = errors.display()
+        ),
+    );
+
+    let report = grade(&implementation);
+    for case in [
+        "independent problems in different blocks are all reported",
+        "an unreadable line does not excuse the violations after it",
+    ] {
+        assert!(
+            report.failure(case).is_some(),
+            "{case:?} must catch this:\n{}",
+            report.stdout
+        );
+    }
+    // And it must not fail cases about one violation, or it would prove
+    // nothing about which case catches what.
+    for case in [
+        "a lowercase orientation is not an orientation",
+        "a grid coordinate past the maximum is refused",
+        "the brief's sample, byte for byte",
+    ] {
+        assert!(
+            report.passed(case),
+            "{case:?} is about one violation and must still pass:\n{}",
+            report.stdout
+        );
+    }
+
+    let generated = grade_with(
+        &implementation,
+        &[
+            "--spelling",
+            "0",
+            "--properties",
+            "0",
+            "--differential",
+            "0",
+            "--rejections",
+            "400",
+        ],
+    );
+    assert!(
+        generated
+            .stdout
+            .lines()
+            .any(|line| line.contains("two independent problems")),
+        "the generated mode must catch it over a wider space than the \
+         catalogue can:\n{}",
+        generated.stdout
+    );
+}

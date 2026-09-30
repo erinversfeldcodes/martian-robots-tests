@@ -418,11 +418,24 @@ fn diagnostics(build: &mut Builder, contract: &Contract) {
          is diagnosed, whatever is wrong elsewhere. A program that stops at \
          its first problem is the only thing this case catches",
         format!("5 3\n1 1 e\n\n\n{over} 1 E\n\n"),
-        Expect::Rejection(Diagnostic {
-            lines: vec![2, 5],
-            any_of: Vec::new(),
-            forbids_a_line_reference: false,
-        }),
+        // A tag per violation, not one shared between them. R7 governs the
+        // orientation and R5 the coordinate, so a program that stops at its
+        // first problem cannot answer both - and neither can one that reports
+        // twice with the same ruling.
+        Expect::Rejection(Diagnostic::at_lines(&[(2, &["R7"]), (5, &["R5", "R1"])])),
+    );
+
+    build.case(
+        "an unreadable line does not excuse the violations after it",
+        &["R25"],
+        "R25's hardest half. The grid line cannot be read at all, and a later \
+         line breaks a rule that needs nothing else to judge it - a lowercase \
+         orientation is wrong whatever the world turns out to be. Its \
+         rationale excuses only a violation measured *against* an invalid \
+         line, which this is not. A reader that abandons the pass once it \
+         cannot parse something reports one of these two",
+        "5x 3\n1 1 e\nRF\n",
+        Expect::Rejection(Diagnostic::at_lines(&[(1, &["R12"]), (2, &["R7"])])),
     );
 }
 

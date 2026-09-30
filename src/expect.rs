@@ -36,7 +36,12 @@ pub struct Diagnostic {
     /// `line N`, so a number is matched as a whole: `line 19` does not answer
     /// a demand for `line 1`.
     pub lines: Vec<usize>,
-    pub any_of: Vec<String>,
+    /// Rulings the diagnostic must cite, as groups. Within a group any one
+    /// tag will do, because §2.5 asks for a governing ruling rather than a
+    /// particular one. Every group must be answered, which is how a rejection
+    /// carrying two independent violations is held to R25: one tag cannot
+    /// stand in for both when the two groups name different rulings.
+    pub requires: Vec<Vec<String>>,
     pub forbids_a_line_reference: bool,
 }
 
@@ -44,7 +49,7 @@ impl Diagnostic {
     pub fn at_line(line: usize, tags: &[&str]) -> Self {
         Self {
             lines: vec![line],
-            any_of: tags.iter().map(|tag| format!("({tag})")).collect(),
+            requires: vec![tags.iter().map(|tag| format!("({tag})")).collect()],
             forbids_a_line_reference: false,
         }
     }
@@ -52,7 +57,21 @@ impl Diagnostic {
     pub fn tagged(tags: &[&str]) -> Self {
         Self {
             lines: Vec::new(),
-            any_of: tags.iter().map(|tag| format!("({tag})")).collect(),
+            requires: vec![tags.iter().map(|tag| format!("({tag})")).collect()],
+            forbids_a_line_reference: false,
+        }
+    }
+
+    /// Several independent violations, each on its own line, each governed by
+    /// a ruling of its own. R25 asks for every violation found in one pass,
+    /// and this is the only shape that asks for more than one.
+    pub fn at_lines(demands: &[(usize, &[&str])]) -> Self {
+        Self {
+            lines: demands.iter().map(|(line, _)| *line).collect(),
+            requires: demands
+                .iter()
+                .map(|(_, tags)| tags.iter().map(|tag| format!("({tag})")).collect())
+                .collect(),
             forbids_a_line_reference: false,
         }
     }
@@ -60,7 +79,7 @@ impl Diagnostic {
     pub fn without_a_line(tags: &[&str]) -> Self {
         Self {
             lines: Vec::new(),
-            any_of: tags.iter().map(|tag| format!("({tag})")).collect(),
+            requires: vec![tags.iter().map(|tag| format!("({tag})")).collect()],
             forbids_a_line_reference: true,
         }
     }
@@ -181,8 +200,10 @@ impl Diagnostic {
                 "diagnostic names line {named:?}, and no line is attributable"
             ));
         }
-        if !self.any_of.is_empty() && !self.any_of.iter().any(|tag| stderr.contains(tag.as_str())) {
-            return Some(format!("diagnostic carries none of {:?}", self.any_of));
+        for group in &self.requires {
+            if !group.is_empty() && !group.iter().any(|tag| stderr.contains(tag.as_str())) {
+                return Some(format!("diagnostic carries none of {group:?}"));
+            }
         }
         None
     }

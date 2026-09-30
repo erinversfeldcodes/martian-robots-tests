@@ -137,15 +137,15 @@ const EXPECTED_SPELLINGS: [&str; 8] = [
 ];
 const EXPECTED_SPELLING_DIGEST: &str = "d1c614aec33820a9";
 const EXPECTED_MUTATIONS: [&str; 10] = [
-    "a position line with no orientation",
-    "a start off the world",
-    "a position line with no orientation",
-    "a foreign separator, inside a run, on the grid line",
+    "two independent problems, on two robots",
     "a robot coordinate over the limit",
-    "a carriage return that would make a line out of nothing",
+    "two independent problems, on two robots",
+    "a separator the grammar does not have",
     "a byte that is not text",
-    "a foreign separator, inside a run, on a position line",
-    "an orientation outside the vocabulary",
-    "an orientation outside the vocabulary",
+    "a carriage return that ends nothing",
+    "an extra token on a position line",
+    "a position line with no orientation",
+    "a robot coordinate over the limit",
+    "a blank line inserted before an instruction line",
 ];
-const EXPECTED_MUTATION_DIGEST: &str = "488d0ded614257f5";
+const EXPECTED_MUTATION_DIGEST: &str = "e4d06b5d6d4aa81e";

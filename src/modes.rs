@@ -285,6 +285,13 @@ pub fn rejections(
         let expect = Expect::Rejection(match &mutation.expectation {
             mutation::Expectation::At(line, tags) => Diagnostic::at_line(*line, tags),
             mutation::Expectation::Tagged(tags) => Diagnostic::tagged(tags),
+            mutation::Expectation::Several(demands) => {
+                let demands: Vec<(usize, &[&str])> = demands
+                    .iter()
+                    .map(|(line, tags)| (*line, tags.as_slice()))
+                    .collect();
+                Diagnostic::at_lines(&demands)
+            }
         });
         let seen = observe(implementation, &[], &mutation.rendered, TIMEOUT)?;
         if let Some(why) = expect.judge(&seen) {
