@@ -629,3 +629,44 @@ fn an_implementation_that_treats_any_odd_byte_as_whitespace_is_caught() {
         report.stdout
     );
 }
+
+#[test]
+fn an_implementation_that_reads_stdin_before_its_arguments_is_caught() {
+    let fixtures = Fixtures::new("stdin-first");
+    // The conforming program behind a wrapper that consults stdin first and
+    // falls back to the arguments only when there is nothing there. Every
+    // other invocation case is graded with empty stdin, so every one of them
+    // passes; the defect is only visible when a flag and a mission arrive
+    // together, which no case asked for until now.
+    let probe = Path::new(env!("CARGO_BIN_EXE_probe")).display().to_string();
+    let implementation = fixtures.implementation(
+        "stdin-first",
+        &format!(
+            "input=$(cat)\n\
+             if [ -n \"$input\" ]; then printf '%s\\n' \"$input\" | {probe}; \
+             else {probe} \"$@\"; fi"
+        ),
+    );
+
+    let report = grade(&implementation);
+    let why = report
+        .failure("a help flag leaves the mission on stdin alone")
+        .expect("the case must fail");
+    assert!(
+        why.contains("stdin was read to the end"),
+        "taking a megabyte to decide what --help means is the finding: {why}"
+    );
+    for case in [
+        "--help alone prints usage and exits 0",
+        "-h alone prints usage and exits 0",
+        "--version alone reports the contract version",
+        "an unknown argument is a usage error",
+    ] {
+        assert!(
+            report.passed(case),
+            "this defect is invisible to {case:?}, which is why the new case \
+             exists:\n{}",
+            report.stdout
+        );
+    }
+}

@@ -1,7 +1,8 @@
 use std::ffi::OsString;
+use std::os::unix::ffi::OsStringExt as _;
 
 use crate::contract::{Contract, SAMPLE_INPUT, SAMPLE_OUTPUT};
-use crate::expect::{Diagnostic, Expect};
+use crate::expect::{Diagnostic, Expect, MORE_THAN_A_PIPE_HOLDS};
 
 pub struct Case {
     pub name: String,
@@ -52,6 +53,25 @@ impl Builder {
             expect,
         });
     }
+
+    fn invocation_with_stdin(
+        &mut self,
+        name: &str,
+        enforces: &[&str],
+        note: &str,
+        args: &[&str],
+        stdin: impl Into<Vec<u8>>,
+        expect: Expect,
+    ) {
+        self.cases.push(Case {
+            name: name.to_string(),
+            enforces: enforces.iter().map(ToString::to_string).collect(),
+            note: note.to_string(),
+            arguments: args.iter().map(OsString::from).collect(),
+            stdin: stdin.into(),
+            expect,
+        });
+    }
 }
 
 pub fn catalogue(contract: &Contract) -> Vec<Case> {
@@ -65,6 +85,7 @@ pub fn catalogue(contract: &Contract) -> Vec<Case> {
     bytes(&mut build);
     boundaries(&mut build, contract);
     invocation(&mut build, contract);
+    boundary(&mut build, contract);
     build.cases
 }
 
@@ -478,6 +499,69 @@ fn invocation(build: &mut Builder, contract: &Contract) {
     );
 }
 
+/// What crosses the process boundary, as distinct from what the arguments
+/// mean: input arriving for a program that was asked a question instead, and
+/// an argument that is not text at all.
+fn boundary(build: &mut Builder, contract: &Contract) {
+    build.invocation_with_stdin(
+        "a help flag leaves the mission on stdin alone",
+        &["R20"],
+        "R20 obliges a help flag to leave stdin unread, and this is how the \
+         outside of a process can tell: the brief's own sample, padded past \
+         what a pipe will buffer. A program that never reads cannot be handed \
+         all of it, and a program that reads it as a mission prints the \
+         answer. An argument loop that runs after the input is consumed is \
+         caught either way, and passes every other help case",
+        &["--help"],
+        padded(SAMPLE_INPUT),
+        Expect::StdinUnread {
+            promise: Box::new(Expect::Help),
+            answer: SAMPLE_OUTPUT.to_vec(),
+        },
+    );
+
+    build.invocation_with_stdin(
+        "a version flag leaves the mission on stdin alone",
+        &["R21"],
+        "R26 says nothing about stdin, so this leans on R21's clause instead: \
+         a version flag is not a mission, and whatever waits behind it is not \
+         addressed to this program. A separate branch in most \
+         implementations, and the one most likely to have been added last",
+        &["--version"],
+        padded(SAMPLE_INPUT),
+        Expect::StdinUnread {
+            promise: Box::new(Expect::Version(contract.version.clone())),
+            answer: SAMPLE_OUTPUT.to_vec(),
+        },
+    );
+
+    build.cases.push(Case {
+        name: "an argument that is not text is a usage error".to_string(),
+        enforces: vec!["R21".to_string()],
+        note: "R22 governs input that is not text; an argument is not input, \
+               and the two arrive by different routes, so a reader that \
+               diagnoses one says nothing about the other. Q3 leaves a crash \
+               to grader policy, so what this demands is only what R21 \
+               already demands of any argument it does not know: nothing on \
+               stdout, a non-zero exit, and something said. A program that \
+               takes an unrecognised argument for success fails it"
+            .to_string(),
+        arguments: vec![OsString::from_vec(vec![b'-', b'-', 0xff])],
+        stdin: Vec::new(),
+        expect: Expect::UsageError,
+    });
+}
+
+/// A payload a program cannot be handed without reading it, so that leaving
+/// stdin unread is something a grader can see rather than assume. The padding
+/// is blank lines, which R4 ignores, so the mission and its answer are the
+/// ones the brief published.
+fn padded(mission: &[u8]) -> Vec<u8> {
+    let mut input = mission.to_vec();
+    input.resize(MORE_THAN_A_PIPE_HOLDS, b'\n');
+    input
+}
+
 fn after_left_turns(turns: u32) -> &'static str {
     ["N", "W", "S", "E"][(turns % 4) as usize]
 }
@@ -486,6 +570,7 @@ fn after_left_turns(turns: u32) -> &'static str {
 mod tests {
     use super::{after_left_turns, catalogue};
     use crate::contract::{Contract, Decision};
+    use crate::expect::{Expect, MORE_THAN_A_PIPE_HOLDS};
 
     #[test]
     fn every_cited_ruling_exists_and_is_ruled() {
@@ -503,6 +588,24 @@ mod tests {
                     matches!(ruling.decision, Decision::Ruled { .. }),
                     "{} cites {id}, which is an open question and may not be tested",
                     case.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_case_that_demands_stdin_be_unread_offers_more_than_a_pipe_holds() {
+        // The check is whether the program took everything offered. A small
+        // payload is handed over whether it reads or not, so a case that
+        // asked for less than this would pass every program alive.
+        let contract = Contract::load().unwrap();
+        for case in catalogue(&contract) {
+            if matches!(case.expect, Expect::StdinUnread { .. }) {
+                assert!(
+                    case.stdin.len() >= MORE_THAN_A_PIPE_HOLDS,
+                    "{} demands stdin be unread and offers {} byte(s)",
+                    case.name,
+                    case.stdin.len()
                 );
             }
         }

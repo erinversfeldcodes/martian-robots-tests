@@ -22,6 +22,14 @@ pub struct Observation {
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
     pub ending: Ending,
+    /// Whether the program took everything offered on stdin.
+    ///
+    /// R20 and R21 both say a flag leaves stdin unread, and this is the only
+    /// way the outside of a process can tell: offer more than a pipe will
+    /// hold, and a program that never reads cannot have taken it. A program
+    /// that drains a megabyte to decide what `--help` means has read stdin,
+    /// whatever it did with the bytes.
+    pub drained_stdin: bool,
 }
 
 impl Observation {
@@ -59,9 +67,7 @@ pub fn observe(
 
     let mut pipe = child.stdin.take().ok_or("stdin was not piped")?;
     let input = stdin.to_vec();
-    let writer = thread::spawn(move || {
-        let _ = pipe.write_all(&input);
-    });
+    let writer = thread::spawn(move || pipe.write_all(&input).is_ok());
 
     let mut out = child.stdout.take().ok_or("stdout was not piped")?;
     let mut err = child.stderr.take().ok_or("stderr was not piped")?;
@@ -94,12 +100,13 @@ pub fn observe(
 
     let stdout = reader_out.join().unwrap_or_default();
     let stderr = reader_err.join().unwrap_or_default();
-    let _ = writer.join();
+    let drained_stdin = writer.join().unwrap_or(false);
 
     Ok(Observation {
         stdout,
         stderr,
         ending,
+        drained_stdin,
     })
 }
 

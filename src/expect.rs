@@ -12,7 +12,23 @@ pub enum Expect {
     /// The version flag alone. Only that the version appears is pinned; the
     /// text around it belongs to the implementation, as help's does.
     Version(String),
+    /// A flag invocation with a mission on stdin. R20 and R21 both oblige a
+    /// flag to leave stdin unread, which has two consequences an outside
+    /// observer can see: the input is not taken, and its answer does not
+    /// appear. The flag's own promise still has to hold, so it is judged by
+    /// whichever expectation makes it.
+    StdinUnread {
+        promise: Box<Expect>,
+        answer: Vec<u8>,
+    },
 }
+
+/// More bytes than any pipe will buffer.
+///
+/// The drain check only says anything about a payload this size: a small one
+/// is handed over in full whether the program reads it or not, because the
+/// kernel accepts it on the program's behalf.
+pub const MORE_THAN_A_PIPE_HOLDS: usize = 1 << 20;
 
 #[derive(Debug, Default)]
 pub struct Diagnostic {
@@ -111,6 +127,26 @@ impl Expect {
                 }
                 None
             }
+            Self::StdinUnread { promise, answer } => {
+                if let Some(why) = promise.judge(seen) {
+                    return Some(why);
+                }
+                if seen.drained_stdin {
+                    return Some("stdin was read to the end".to_string());
+                }
+                if !answer.is_empty()
+                    && seen
+                        .stdout
+                        .windows(answer.len())
+                        .any(|window| window == answer.as_slice())
+                {
+                    return Some(format!(
+                        "stdin was read and answered: stdout contains {}",
+                        show(answer)
+                    ));
+                }
+                None
+            }
             Self::UsageError => {
                 if !seen.stdout.is_empty() {
                     return Some(format!(
@@ -194,10 +230,19 @@ fn code_of(seen: &Observation) -> String {
     }
 }
 
+/// Bytes as a readable string, cut short: a case may carry a megabyte of
+/// padding, and a failure nobody can scroll through explains nothing.
+const SHOW_AT_MOST: usize = 240;
+
 pub fn show(bytes: &[u8]) -> String {
-    let mut shown = String::with_capacity(bytes.len() + 2);
+    let (shown_bytes, elided) = if bytes.len() > SHOW_AT_MOST {
+        (&bytes[..SHOW_AT_MOST], bytes.len() - SHOW_AT_MOST)
+    } else {
+        (bytes, 0)
+    };
+    let mut shown = String::with_capacity(shown_bytes.len() + 2);
     shown.push('"');
-    for &byte in bytes {
+    for &byte in shown_bytes {
         match byte {
             b'\n' => shown.push_str("\\n"),
             b'\r' => shown.push_str("\\r"),
@@ -211,6 +256,9 @@ pub fn show(bytes: &[u8]) -> String {
         }
     }
     shown.push('"');
+    if elided > 0 {
+        let _ = write!(shown, " and {elided} more byte(s)");
+    }
     shown
 }
 
@@ -225,6 +273,7 @@ mod tests {
             stdout: stdout.to_vec(),
             stderr: stderr.to_vec(),
             ending,
+            drained_stdin: false,
         }
     }
 
@@ -406,5 +455,52 @@ mod tests {
     #[test]
     fn invisible_bytes_are_shown() {
         assert_eq!(show(b"a\tb\r\n\xc2\xa0"), r#""a\tb\r\n\xc2\xa0""#);
+    }
+
+    fn asked_for_help(stdout: &[u8], drained_stdin: bool) -> Observation {
+        Observation {
+            stdout: stdout.to_vec(),
+            stderr: Vec::new(),
+            ending: Ending::Code(0),
+            drained_stdin,
+        }
+    }
+
+    fn unread() -> Expect {
+        Expect::StdinUnread {
+            promise: Box::new(Expect::Help),
+            answer: b"1 1 E\n".to_vec(),
+        }
+    }
+
+    #[test]
+    fn help_that_leaves_the_input_alone_passes() {
+        assert_eq!(
+            unread().judge(&asked_for_help(b"usage: ...\n", false)),
+            None
+        );
+    }
+
+    #[test]
+    fn taking_the_whole_input_is_caught() {
+        let why = unread()
+            .judge(&asked_for_help(b"usage: ...\n", true))
+            .unwrap();
+        assert!(why.contains("read to the end"), "{why}");
+    }
+
+    #[test]
+    fn answering_part_of_the_input_is_caught_even_when_it_was_not_all_taken() {
+        // A program that reads what the pipe already holds, answers it, and
+        // exits. The drain check cannot see this one: the rest of the payload
+        // was never accepted.
+        let why = unread().judge(&asked_for_help(b"1 1 E\n", false)).unwrap();
+        assert!(why.contains("read and answered"), "{why}");
+    }
+
+    #[test]
+    fn a_flag_that_leaves_stdin_alone_still_has_to_keep_its_own_promise() {
+        let why = unread().judge(&asked_for_help(b"", false)).unwrap();
+        assert!(why.contains("no usage on stdout"), "{why}");
     }
 }
