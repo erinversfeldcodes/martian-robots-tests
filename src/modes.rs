@@ -25,6 +25,9 @@ pub struct SpellingRun {
     /// Valid missions the program would not answer at all. Not a divergence -
     /// nothing was compared - but not a pass either.
     pub refused: Vec<Vec<u8>>,
+    /// Respellings actually compared against a canonical answer. Zero of these
+    /// with a budget above zero means the mode reported on nothing.
+    pub compared: usize,
 }
 
 pub struct Divergence {
@@ -42,6 +45,7 @@ pub fn spelling_differential(
 ) -> Result<SpellingRun, String> {
     let mut rng = Rng::from_seed(budget.seed);
     let mut divergences = Vec::new();
+    let mut compared = 0;
     let mut refused = Vec::new();
 
     for _ in 0..budget.missions {
@@ -69,6 +73,7 @@ pub fn spelling_differential(
                 ));
             }
 
+            compared += 1;
             let got = answer(implementation, &rendered)?
                 .unwrap_or_else(|| b"<refused a spelling of a mission it answered>".to_vec());
             if got != expected {
@@ -85,6 +90,7 @@ pub fn spelling_differential(
     Ok(SpellingRun {
         divergences,
         refused,
+        compared,
     })
 }
 

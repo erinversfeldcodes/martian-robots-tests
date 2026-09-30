@@ -1014,3 +1014,49 @@ fn a_selection_that_matches_nothing_is_an_error_and_not_a_clean_run() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn a_mode_that_judged_nothing_is_the_suite_failing_and_not_the_program_passing() {
+    let fixtures = Fixtures::new("vacuous");
+    let implementation = fixtures.implementation(
+        "conforming",
+        &format!(
+            "exec {} \"$@\"",
+            Path::new(env!("CARGO_BIN_EXE_probe")).display()
+        ),
+    );
+
+    // Seed 2 with a budget of one builds no mutation at all: the drawn mission
+    // has nothing a mutation can break. Before the floor this printed
+    // `0 of 1 attempted, 0 failure(s)` and exited 0 — a consumer who turned the
+    // budgets down to fit a CI minute got a green run that judged nothing.
+    let output = Command::new(env!("CARGO_BIN_EXE_martian-robots-verify"))
+        .arg("--bin")
+        .arg(&implementation)
+        .args([
+            "--quiet",
+            "--rejections",
+            "1",
+            "--spelling",
+            "0",
+            "--properties",
+            "0",
+            "--differential",
+            "0",
+            "--seed",
+            "2",
+        ])
+        .output()
+        .expect("to run the suite");
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "a mode that judged nothing must be the suite could-not-run code"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("judged nothing"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
