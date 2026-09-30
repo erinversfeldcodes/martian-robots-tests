@@ -251,6 +251,21 @@ impl Contract {
         })
     }
 
+    /// The part of the version that conformance depends on.
+    ///
+    /// The patch component counts releases of the suite that enforces this
+    /// contract, and a suite release does not change what conforms — closing a
+    /// false green changes what is *detected*. So R26 asks an implementation to
+    /// report the major and minor, and a correct program does not stop
+    /// conforming because the suite was fixed.
+    pub fn conformance_version(&self) -> String {
+        let mut parts = self.version.split('.');
+        match (parts.next(), parts.next()) {
+            (Some(major), Some(minor)) => format!("{major}.{minor}"),
+            _ => self.version.clone(),
+        }
+    }
+
     pub fn ruled(&self) -> impl Iterator<Item = &Ruling> {
         self.rulings.iter().filter(|ruling| ruling.is_ruled())
     }
@@ -538,5 +553,37 @@ mod tests {
         assert!(document.contains("R1"), "{document}");
         assert!(document.contains("Q1"), "{document}");
         assert!(document.contains("x = \"y\" ;"), "{document}");
+    }
+
+    #[test]
+    fn the_crate_and_the_contract_are_one_version() {
+        // They are released together as one artifact, so a tag means one
+        // thing. Nothing can derive the crate version from the contract -
+        // Cargo.toml cannot read a file - so the two are written down twice
+        // and held equal here, which is the only place the duplication is
+        // allowed to be.
+        let contract = Contract::load().unwrap();
+        assert_eq!(
+            contract.version,
+            env!("CARGO_PKG_VERSION"),
+            "contract/limits.toml and Cargo.toml disagree about what this is"
+        );
+    }
+
+    #[test]
+    fn the_conformance_version_drops_the_release_counter() {
+        let contract = Contract::load().unwrap();
+        assert_eq!(
+            contract.conformance_version(),
+            contract.version.rsplit_once('.').unwrap().0,
+            "the conformance version is the major and minor"
+        );
+    }
+
+    #[test]
+    fn a_version_with_nothing_to_drop_is_left_alone() {
+        let mut contract = Contract::load().unwrap();
+        contract.version = "3".to_string();
+        assert_eq!(contract.conformance_version(), "3");
     }
 }

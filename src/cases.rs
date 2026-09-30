@@ -688,7 +688,7 @@ fn invocation(build: &mut Builder, contract: &Contract) {
          and R26 is where it does so. Only that the version appears is pinned; \
          the text around it is the implementation's own",
         &["--version"],
-        Expect::Version(contract.version.clone()),
+        Expect::Version(contract.conformance_version()),
     );
 
     build.invocation(
@@ -770,7 +770,7 @@ fn process(build: &mut Builder, contract: &Contract) {
         &["--version"],
         padded(SAMPLE_INPUT),
         Expect::StdinUnread {
-            promise: Box::new(Expect::Version(contract.version.clone())),
+            promise: Box::new(Expect::Version(contract.conformance_version())),
             answer: SAMPLE_OUTPUT.to_vec(),
         },
     );

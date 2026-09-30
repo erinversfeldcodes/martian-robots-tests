@@ -3,7 +3,7 @@
 # Semver: changes to what input is accepted, or to what output a given input
 # produces, is a major bump; settling an open question without changing any
 # conforming implementation's answer is a minor one.
-version = "2.0.0"
+version = "2.1.0"
 
 [limits]
 max_coordinate = 50

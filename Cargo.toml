@@ -1,6 +1,6 @@
 [package]
 name = "martian-robots-verify"
-version = "0.1.0"
+version = "2.1.0"
 description = "The Martian Robots CLI contract, and the suite that enforces it"
 edition = "2024"
 rust-version = "1.93"
