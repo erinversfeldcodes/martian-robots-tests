@@ -130,8 +130,12 @@ fn run(mission: &Mission, defect: &str) -> String {
                 'R' => facing = turned(facing, 1),
                 'F' => {
                     let (ahead_x, ahead_y) = ahead(x, y, facing);
-                    let leaves = ahead_x < 0
-                        || ahead_y < 0
+                    // A world with an upper edge and no lower one, which is
+                    // what checking `> max` and forgetting `< 0` leaves - and
+                    // what unsigned arithmetic invites, because there is no
+                    // below zero to compare against.
+                    let below = defect != "no-lower-edge" && (ahead_x < 0 || ahead_y < 0);
+                    let leaves = below
                         || ahead_x > i64::from(mission.max_x)
                         || ahead_y > i64::from(mission.max_y);
                     if !leaves {

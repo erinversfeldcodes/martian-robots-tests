@@ -165,6 +165,18 @@ fn scent(build: &mut Builder) {
     );
 
     build.case(
+        "a robot is lost off each of the four edges",
+        &["R8"],
+        "four robots on four cells, each walking off a different edge, so no \
+         scent from one reaches another. Two of the moves go below zero, which \
+         is where a world measured in unsigned arithmetic wraps to the far side \
+         of the grid or panics. Without this the case arrives as an anonymous \
+         disagreement rather than a named rule",
+        "1 1\n0 0 W\nF\n1 0 S\nF\n0 1 N\nF\n1 1 E\nF\n",
+        Expect::Output(b"0 0 W LOST\n1 0 S LOST\n0 1 N LOST\n1 1 E LOST\n".to_vec()),
+    );
+
+    build.case(
         "an ignored move does not end the run",
         &["R9"],
         "R9 says the move is ignored, not that the robot stops. Robot two \
@@ -282,6 +294,29 @@ fn whitespace(build: &mut Builder) {
     );
 
     build.case(
+        "a whitespace-only line is a robot with nothing to do",
+        &["R15", "R2"],
+        "R15 makes a line of only whitespace blank, and R4 ignores whitespace \
+         at the edges of a line, so in instruction position both readings \
+         arrive at the same place: an empty instruction string, which R2 says \
+         is valid",
+        "5 3\n1 1 E\n \n",
+        Expect::Output(b"1 1 E\n".to_vec()),
+    );
+
+    build.case(
+        "the same whitespace-only line between blocks is ignored",
+        &["R15", "R4"],
+        "byte for byte the line above, in the other position, meaning the \
+         other thing. Between blocks it is a separator and disappears; in \
+         instruction position it is a robot's empty instruction string. A \
+         reader that treats blank lines uniformly gets one of the two wrong, \
+         and neither case alone shows which",
+        "5 3\n1 1 E\nRF\n \n0 0 N\n\n",
+        Expect::Output(b"1 0 S\n0 0 N\n".to_vec()),
+    );
+
+    build.case(
         "a vertical tab at the end of an instruction line is not whitespace",
         &["R4", "R12", "R7"],
         "the trailing edge, where `ows` makes real whitespace invisible. \
@@ -301,6 +336,27 @@ fn vocabulary(build: &mut Builder) {
          this, so either satisfies the diagnostic",
         "5 3\n1 1 EE\nRFRFRFRF\n",
         Expect::Rejection(Diagnostic::at_line(2, &["R12", "R7"])),
+    );
+
+    build.case(
+        "an orientation with something outside the vocabulary glued to it",
+        &["R12", "R7"],
+        "the same shape as the case above with the second character outside \
+         `N E S W` as well, which is how a first-character reader usually meets \
+         it: not a doubled letter somebody typed twice, but a stray byte on the \
+         end of a line",
+        "5 3\n1 1 Ex\nRFRFRFRF\n",
+        Expect::Rejection(Diagnostic::at_line(2, &["R12", "R7"])),
+    );
+
+    build.case(
+        "a robot coordinate with a letter glued to it",
+        &["R12"],
+        "the grid line has this case already, and a reader that validates the \
+         grid line and then trusts the robots would pass it. Two numbers and a \
+         letter is the same production wherever it appears",
+        "5 3\n1x 1 E\nRFRFRFRF\n",
+        Expect::Rejection(Diagnostic::at_line(2, &["R12"])),
     );
 
     build.case(

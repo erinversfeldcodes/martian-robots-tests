@@ -682,7 +682,7 @@ fn an_implementation_that_reads_stdin_before_its_arguments_is_caught() {
 /// each one fails, and the assertions below run both ways. A case missing from
 /// every row is a case no wrong program is known to fail. A defect that fails
 /// a row it is not listed on is a case pinning more than it claims.
-const NEAR_MISSES: [(&str, &[&str]); 6] = [
+const NEAR_MISSES: [(&str, &[&str]); 7] = [
     (
         "direction-scent",
         &["a scent blocks a departure by a different edge"],
@@ -702,6 +702,21 @@ const NEAR_MISSES: [(&str, &[&str]); 6] = [
     (
         "one-scent",
         &["scents on different cells each protect their own"],
+    ),
+    (
+        // Checks the upper edges and forgets there is a lower one, which is
+        // what unsigned arithmetic invites. It fails four cases rather than
+        // one, and that is the finding: three of them are scent cases that
+        // happen to place a robot on an edge at zero, so none of them was
+        // testing what it looked like it was testing until the four-edge case
+        // named the rule.
+        "no-lower-edge",
+        &[
+            "a scent marks the cell and never the robot",
+            "scents on different cells each protect their own",
+            "a scent protects a robot that walked onto the cell",
+            "a robot is lost off each of the four edges",
+        ],
     ),
     (
         "keep-simulating",
