@@ -105,31 +105,31 @@ fn the_mutations_a_seed_names() {
 }
 
 const EXPECTED_MISSIONS: [&str; 12] = [
-    "2x2 E94 S26 W99",
-    "4x1 W24 N99 E46",
-    "3x1 N99 W3",
-    "5x43 E3",
-    "39x3",
-    "2x50 S99 E0",
-    "18x3 W39",
-    "22x45",
-    "50x1 S6 S7 N5",
-    "5x49 E85",
-    "50x3 N64 E39 E99",
-    "38x2 S6 N3 W85",
+    "2x2 W0 W0 E2 E7 W7 E4 E87",
+    "5x1 E36",
+    "2x5 N1 W7 N21 S0 N4 W3 W2",
+    "50x38 N7 W48 N99 W4 S3 W48 N95 S6 W5 W4",
+    "2x50 W1 E1 N4 E35",
+    "46x39 E6 S6 S7",
+    "3x25 N52 S0 S2 E3 S1 W99 N4 E4",
+    "0x3 E1 E99 W95 S0 E14",
+    "5x0 W3",
+    "4x3 E5 W5 E4 N99 E70",
+    "50x12 N8 N2 S7 E4 W2 S4 S5 S68 S7",
+    "1x2 W80 S99 N7 S84 E5 S97 E82 N5 E99 S5 E0 N4",
 ];
-const EXPECTED_MISSION_DIGEST: &str = "4f3c4f2b65bcc2ce";
+const EXPECTED_MISSION_DIGEST: &str = "2721281322b62b2b";
 const EXPECTED_SPELLING_DIGEST: &str = "d1c614aec33820a9";
 const EXPECTED_MUTATIONS: [&str; 10] = [
-    "a foreign separator, inside a run, on a position line",
-    "an extra token on a position line",
-    "a foreign separator, inside a run, on a position line",
-    "a carriage return that would make a line out of nothing",
-    "input that stops after a position line",
-    "input that stops after a position line",
-    "an instruction string over the limit",
     "a position line with no orientation",
-    "an instruction string over the limit",
-    "a blank line inserted before an instruction line",
+    "a start off the world",
+    "a position line with no orientation",
+    "a foreign separator, inside a run, on the grid line",
+    "a robot coordinate over the limit",
+    "a carriage return that would make a line out of nothing",
+    "a byte that is not text",
+    "a foreign separator, inside a run, on a position line",
+    "an orientation outside the vocabulary",
+    "an orientation outside the vocabulary",
 ];
-const EXPECTED_MUTATION_DIGEST: &str = "db706bfcf0ff7983";
+const EXPECTED_MUTATION_DIGEST: &str = "917eec1f1e7ab291";

@@ -128,7 +128,7 @@ impl Mission {
     pub fn draw_busy(rng: &mut Rng, contract: &Contract) -> Self {
         let max_x = axis(rng, contract.limits.max_coordinate);
         let max_y = axis(rng, contract.limits.max_coordinate);
-        let robots = (0..=rng.below(5))
+        let robots = (0..=population(rng))
             .map(|_| {
                 let mut robot = Robot::draw_on(rng, max_x, max_y, contract);
                 let length = steps(rng, contract.limits.max_instructions);
@@ -156,7 +156,7 @@ impl Mission {
     pub fn draw(rng: &mut Rng, contract: &Contract) -> Self {
         let max_x = axis(rng, contract.limits.max_coordinate);
         let max_y = axis(rng, contract.limits.max_coordinate);
-        let robots = (0..rng.below(4))
+        let robots = (0..population(rng))
             .map(|_| Robot::draw_on(rng, max_x, max_y, contract))
             .collect();
         Self {
@@ -210,6 +210,22 @@ impl Robot {
 /// see a bound checked at one digit and not at two, or a coordinate held in
 /// something too small for the limit the contract declares. Those are ordinary
 /// bugs, and a generator capped below the limit is blind to all of them.
+/// How many robots a mission carries.
+///
+/// Stratified for the same reason the axes are: small missions are the common
+/// case and the catalogue already covers them, but they cannot reach what only
+/// a crowd exposes. Three robots in the right order say nothing about the
+/// ninth, and a program that answers from a map keyed by position, or sorts
+/// before printing, agrees with everything until there is enough to disagree
+/// about. The tail is drawn often enough to arrive inside a modest budget.
+fn population(rng: &mut Rng) -> u32 {
+    match rng.below(10) {
+        0..=5 => rng.below(4),
+        6..=8 => 4 + rng.below(5),
+        _ => 9 + rng.below(8),
+    }
+}
+
 fn axis(rng: &mut Rng, max_coordinate: u32) -> u32 {
     match rng.below(10) {
         0..=5 => rng.below(6).min(max_coordinate),

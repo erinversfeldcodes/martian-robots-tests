@@ -1,7 +1,10 @@
 use crate::mission::{Mission, Robot};
 
 pub const NAMES: [&str; 6] = [
-    "one line per robot, in input order",
+    // Not "in input order": counting lines cannot see an order. Order is
+    // checked by the predicates that know what a particular line should say,
+    // which zip the robots against the reports and would notice a swap.
+    "one line per robot",
     "every line is canonical",
     "every reported position is on the grid",
     "a robot that cannot move reports where it started",
@@ -269,10 +272,7 @@ mod tests {
     #[test]
     fn a_missing_line_is_caught() {
         let mission = mission(5, 3, &[(1, 1, 'E', "RFRFRFRF"), (0, 3, 'W', "LL")]);
-        assert_eq!(
-            violations(&mission, b"1 1 E\n"),
-            ["one line per robot, in input order"]
-        );
+        assert_eq!(violations(&mission, b"1 1 E\n"), ["one line per robot"]);
     }
 
     #[test]

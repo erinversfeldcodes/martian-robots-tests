@@ -807,3 +807,52 @@ fn the_invariants_are_asked_of_respelled_input_as_well_as_canonical() {
          half of this mode is not running"
     );
 }
+
+#[test]
+fn an_implementation_that_answers_only_the_first_few_robots_is_caught() {
+    let fixtures = Fixtures::new("first-few");
+    // The conforming program, truncated to eight lines. Nothing in the
+    // catalogue notices: its longest mission carries three robots, and neither
+    // did the generated modes until a drawn mission could hold more than
+    // eight. This is what the tail of the population draw is for.
+    // Through a file rather than a pipe, so the exit code stays the probe's:
+    // in a pipeline it would become head's, and every rejection case would
+    // fail for a reason that has nothing to do with this defect.
+    let answer = fixtures.directory.join("answer");
+    let implementation = fixtures.implementation(
+        "first-few",
+        &format!(
+            "{} \"$@\" > {answer}; code=$?\nhead -8 {answer}\nexit $code",
+            Path::new(env!("CARGO_BIN_EXE_probe")).display(),
+            answer = answer.display()
+        ),
+    );
+
+    let report = grade(&implementation);
+    assert!(
+        report.conformed,
+        "every case in the catalogue passes, which is the point:\n{}",
+        report.stdout
+    );
+
+    let generated = grade_with(
+        &implementation,
+        &[
+            "--spelling",
+            "0",
+            "--rejections",
+            "0",
+            "--differential",
+            "0",
+            "--properties",
+            "40",
+            "--seed",
+            "23",
+        ],
+    );
+    assert!(
+        generated.stdout.contains("one line per robot"),
+        "a crowd is the only thing that shows this, and it must:\n{}",
+        generated.stdout
+    );
+}
