@@ -16,4 +16,5 @@ pub mod properties;
 pub mod reference;
 pub mod rng;
 pub mod run;
+pub mod shrink;
 pub mod spelling;

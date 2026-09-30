@@ -272,6 +272,20 @@ fn generated(
         println!("      mission:  {}", show(&disagreement.mission));
         println!("      expected: {}", show(&disagreement.expected));
         println!("      got:      {}", show(&disagreement.got));
+        if let Some(reduced) = &disagreement.reduced {
+            println!(
+                "      reduced in {} attempt(s){}:",
+                reduced.attempts,
+                if reduced.exhausted {
+                    ", before the budget ran out"
+                } else {
+                    ""
+                }
+            );
+            println!("      mission:  {}", show(&reduced.mission));
+            println!("      expected: {}", show(&reduced.expected));
+            println!("      got:      {}", show(&reduced.got));
+        }
     }
     println!(
         "differential: {} mission(s), seed {}, {} disagreement(s)",

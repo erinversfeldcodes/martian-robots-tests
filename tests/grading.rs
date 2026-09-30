@@ -856,3 +856,70 @@ fn an_implementation_that_answers_only_the_first_few_robots_is_caught() {
         generated.stdout
     );
 }
+
+#[test]
+fn a_disagreement_is_reported_small_enough_to_read() {
+    let fixtures = Fixtures::new("truncating");
+    // A wrapper that cuts every line to fifteen characters, which is a real
+    // defect shape: a fixed buffer, or a read that stops at a length nobody
+    // chose on purpose. It answers short missions correctly, so the
+    // disagreement it produces is a long one, and a long one is exactly what
+    // nobody can debug.
+    let implementation = fixtures.implementation(
+        "truncating",
+        &format!(
+            "awk '{{ if (length($0) > 15) $0 = substr($0, 1, 15); print }}' | {}",
+            Path::new(env!("CARGO_BIN_EXE_probe")).display()
+        ),
+    );
+
+    let report = grade_with(
+        &implementation,
+        &[
+            "--spelling",
+            "0",
+            "--properties",
+            "0",
+            "--rejections",
+            "0",
+            "--differential",
+            "20",
+            "--seed",
+            "41",
+        ],
+    );
+
+    let mut lines = report
+        .stdout
+        .lines()
+        .skip_while(|line| !line.starts_with("DISAGREES"));
+    let drawn = lines
+        .find(|line| line.trim_start().starts_with("mission:"))
+        .expect("a disagreement to be found at all")
+        .to_string();
+    let reduced_at = lines
+        .find(|line| line.trim_start().starts_with("reduced in"))
+        .map(ToString::to_string)
+        .expect("the first disagreement to be reduced");
+    let reduced = lines
+        .find(|line| line.trim_start().starts_with("mission:"))
+        .expect("the reduction to name a mission")
+        .to_string();
+
+    assert!(
+        reduced.len() < drawn.len() / 2,
+        "a reduction that barely reduces is not worth the processes it costs\n\
+         drawn:   {drawn}\n  reduced: {reduced}"
+    );
+    assert!(
+        !reduced_at.contains("budget ran out"),
+        "a defect this simple should reduce all the way: {reduced_at}"
+    );
+    // One robot, one instruction line, and the truncation boundary still in
+    // it: the smallest input that can show a sixteenth character going missing.
+    assert!(
+        reduced.contains("\\n") && reduced.matches("\\n").count() == 3,
+        "the reduction should be a grid line, one robot and its instructions: \
+         {reduced}"
+    );
+}

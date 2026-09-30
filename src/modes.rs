@@ -8,6 +8,7 @@ use crate::properties;
 use crate::reference;
 use crate::rng::Rng;
 use crate::run::{TIMEOUT, observe};
+use crate::shrink;
 use crate::spelling::{self, Spelling};
 
 pub struct Budget {
@@ -284,6 +285,51 @@ pub struct Disagreement {
     pub mission: Vec<u8>,
     pub expected: Vec<u8>,
     pub got: Vec<u8>,
+    /// The same disagreement on the smallest mission that still produces it.
+    ///
+    /// Only the first disagreement in a run is reduced. Reducing costs a
+    /// process per candidate, and a program that disagrees about everything
+    /// would turn a sixty-mission run into a six-thousand-process one for no
+    /// extra information: whoever reads this needs one reproducer they can
+    /// hold in their head, and the rest of the list says how widespread the
+    /// problem is.
+    pub reduced: Option<Reduction>,
+}
+
+pub struct Reduction {
+    pub mission: Vec<u8>,
+    pub expected: Vec<u8>,
+    pub got: Vec<u8>,
+    pub attempts: usize,
+    pub exhausted: bool,
+}
+
+/// Reduce a disagreeing mission to the smallest one that still disagrees.
+///
+/// The predicate is "differs from the reference", which a refusal satisfies:
+/// the reference answers every valid mission, so a program that refuses one
+/// differs from it. Both are differential failures, and the report says which.
+fn reduce(
+    implementation: &Path,
+    contract: &Contract,
+    mission: &Mission,
+) -> Result<Reduction, String> {
+    let smaller = shrink::shrink(mission, contract, |candidate| {
+        let said = answer(implementation, &candidate.canonical())?;
+        Ok(said.as_deref() != Some(reference::run(candidate).as_slice()))
+    })?;
+
+    let input = smaller.mission.canonical();
+    let expected = reference::run(&smaller.mission);
+    let got =
+        answer(implementation, &input)?.unwrap_or_else(|| b"<refused a valid mission>".to_vec());
+    Ok(Reduction {
+        mission: input,
+        expected,
+        got,
+        attempts: smaller.attempts,
+        exhausted: smaller.exhausted,
+    })
 }
 
 /// Compare answers with a second implementation written from the same
@@ -313,10 +359,17 @@ pub fn differential(
         let got = answer(implementation, &input)?
             .unwrap_or_else(|| b"<refused a valid mission>".to_vec());
         if got != expected {
+            // The first one is reduced; see `Disagreement::reduced`.
+            let reduced = if disagreements.is_empty() {
+                Some(reduce(implementation, contract, &mission)?)
+            } else {
+                None
+            };
             disagreements.push(Disagreement {
                 mission: input,
                 expected,
                 got,
+                reduced,
             });
         }
     }
