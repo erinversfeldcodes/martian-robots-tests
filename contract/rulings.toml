@@ -212,7 +212,7 @@ note = "A position line ending `1 1 EE` has three tokens, so R12's \"exactly x y
 id = "Q6"
 status = "open"
 question = "How should a diagnostic characterise whitespace that is neither a space nor a tab?"
-note = "That such a line is invalid is R4, not an open question. What is open is the characterisation: a bad separator, or a character outside the vocabulary. R4, R12 and R7 can each be read as governing, and §2.5 asks for one governing tag rather than a particular one, so any of them satisfies it."
+note = "That such a line is invalid is R4, not an open question. What is open is the characterisation: a bad separator, or a character outside the vocabulary. R4 and R12 can each be read as governing wherever such a character appears, and R7 can where the line carries a vocabulary token for it to be read as part of - an instruction string or an orientation - which the grid line does not. §2.5 asks for one governing tag rather than a particular one, so any ruling that governs satisfies it."
 
 [[ruling]]
 id = "Q7"

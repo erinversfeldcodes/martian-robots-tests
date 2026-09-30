@@ -197,12 +197,21 @@ fn break_the_whitespace(rng: &mut Rng, mission: &Mission, contract: &Contract) -
         contract.limits.max_instructions,
     )?;
 
+    // Q6 leaves the characterisation open: a bad separator, or a character
+    // outside the vocabulary. Any governing ruling satisfies §2.5 - but R7's
+    // question is scoped to an instruction string or an orientation, and the
+    // grid line has neither, so there it cannot be read as governing at all.
+    // The hand-written form-feed case on the grid line already says so.
+    let tags = if line_type == "the grid line" {
+        vec!["R4", "R12"]
+    } else {
+        vec!["R4", "R12", "R7"]
+    };
+
     Some(Mutation {
         kind,
         rendered,
-        // Q6 leaves the characterisation open: a bad separator, or a character
-        // outside the vocabulary. Any governing ruling satisfies §2.5.
-        expectation: Expectation::At(at + 1, vec!["R4", "R12", "R7"]),
+        expectation: Expectation::At(at + 1, tags),
     })
 }
 
@@ -565,5 +574,36 @@ mod tests {
             }
         }
         assert_eq!(kinds.len(), 25, "only built {kinds:?}");
+    }
+
+    #[test]
+    fn no_mutation_offers_a_ruling_that_cannot_govern_where_it_landed() {
+        // R7's question is scoped to an instruction string or an orientation.
+        // A grid line carries neither, so offering R7 there lets a program
+        // answer with a ruling that does not govern and still pass - which is
+        // the same defect as demanding the wrong ruling, in the other
+        // direction.
+        let contract = Contract::load().unwrap();
+        let mut rng = Rng::from_seed(101);
+        let mut checked = 0;
+        for _ in 0..4_000 {
+            let mission = Mission::draw(&mut rng, &contract);
+            let Some(mutation) = mutate(&mut rng, &mission, &contract) else {
+                continue;
+            };
+            if !mutation.kind.ends_with("the grid line") {
+                continue;
+            }
+            checked += 1;
+            let tags = match &mutation.expectation {
+                Expectation::At(_, tags) | Expectation::Tagged(tags) => tags,
+            };
+            assert!(
+                !tags.contains(&"R7"),
+                "{:?} offers R7 on a line with no vocabulary token",
+                mutation.kind
+            );
+        }
+        assert!(checked > 0, "no mutation landed on the grid line");
     }
 }

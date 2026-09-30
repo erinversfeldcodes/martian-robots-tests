@@ -610,11 +610,12 @@ fn boundary(build: &mut Builder, contract: &Contract) {
 
     build.invocation_with_stdin(
         "a version flag leaves the mission on stdin alone",
-        &["R21"],
-        "R26 says nothing about stdin, so this leans on R21's clause instead: \
-         a version flag is not a mission, and whatever waits behind it is not \
-         addressed to this program. A separate branch in most \
-         implementations, and the one most likely to have been added last",
+        &["R26"],
+        "R26 says it in the same breath as the rest: text to stdout, exit 0, \
+         and no stdin read. A version flag is not a mission, and whatever \
+         waits behind it is not addressed to this program. A separate branch \
+         in most implementations, and the one most likely to have been added \
+         last",
         &["--version"],
         padded(SAMPLE_INPUT),
         Expect::StdinUnread {
