@@ -137,15 +137,15 @@ const EXPECTED_SPELLINGS: [&str; 8] = [
 ];
 const EXPECTED_SPELLING_DIGEST: &str = "d1c614aec33820a9";
 const EXPECTED_MUTATIONS: [&str; 10] = [
-    "two independent problems, on two robots",
-    "a robot coordinate over the limit",
-    "two independent problems, on two robots",
-    "a separator the grammar does not have",
-    "a byte that is not text",
+    "an instruction outside the vocabulary",
     "a carriage return that ends nothing",
-    "an extra token on a position line",
+    "a start off the world",
+    "a byte that cannot begin a character",
     "a position line with no orientation",
-    "a robot coordinate over the limit",
-    "a blank line inserted before an instruction line",
+    "a separator the grammar does not have",
+    "a position line with no orientation",
+    "a code point past the last one",
+    "a separator the grammar does not have",
+    "a foreign separator, leading, on an instruction line",
 ];
-const EXPECTED_MUTATION_DIGEST: &str = "e4d06b5d6d4aa81e";
+const EXPECTED_MUTATION_DIGEST: &str = "1989f21088b4d2ea";

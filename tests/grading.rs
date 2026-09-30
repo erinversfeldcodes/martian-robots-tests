@@ -1167,3 +1167,52 @@ fn an_implementation_that_reports_only_its_first_problem_is_caught() {
         generated.stdout
     );
 }
+
+#[test]
+fn a_decoder_that_accepts_an_overlong_encoding_is_caught() {
+    let fixtures = Fixtures::new("overlong-utf8");
+    // Decodes `C0 A0` as a space before parsing, which is what a decoder that
+    // does not check for the shortest form does. This is the one malformed-byte
+    // defect that produces an *answer* rather than a wrong diagnostic: the
+    // input is refused by the contract and accepted by the program, and the
+    // answer it gives looks entirely reasonable.
+    let implementation = fixtures.implementation(
+        "overlong-utf8",
+        &format!(
+            "MISBEHAVE=overlong-utf8 exec {}",
+            Path::new(env!("CARGO_BIN_EXE_misbehave")).display()
+        ),
+    );
+
+    let report = grade(&implementation);
+    let why = report
+        .failure("an overlong encoding of a space is not a space")
+        .expect("the case written for this must catch it");
+    assert!(
+        why.contains("stdout") || why.contains("exit 0"),
+        "the finding is that it answered rather than refused: {why}"
+    );
+
+    let generated = grade_with(
+        &implementation,
+        &[
+            "--spelling",
+            "0",
+            "--properties",
+            "0",
+            "--differential",
+            "0",
+            "--rejections",
+            "400",
+        ],
+    );
+    assert!(
+        generated
+            .stdout
+            .lines()
+            .any(|line| line.starts_with("ACCEPTED") && line.contains("overlong")),
+        "the taxonomy must catch it over a wider space than two hand cases \
+         can:\n{}",
+        generated.stdout
+    );
+}

@@ -441,6 +441,29 @@ fn diagnostics(build: &mut Builder, contract: &Contract) {
 
 fn bytes(build: &mut Builder) {
     build.case(
+        "an overlong encoding of a space is not a space",
+        &["R22"],
+        "the dangerous class. `C0 A0` decodes to a space under any decoder \
+         that does not check for the shortest form, and a decoder that accepts \
+         it turns input this contract refuses into a mission it accepts - with \
+         nothing downstream able to tell that happened. Every other \
+         malformed-byte case produces a diagnostic either way; this one \
+         produces an answer",
+        b"5\xc0\xa03\n1 1 E\nRF\n".to_vec(),
+        Expect::Rejection(Diagnostic::at_line(1, &["R22"])),
+    );
+
+    build.case(
+        "a UTF-16 surrogate is not a character",
+        &["R22"],
+        "`ED A0 80` is how U+D800 is spelled by a decoder that was written \
+         against UTF-16 and never learned that surrogates are unencodable. \
+         Well-formed by the shape of the bytes, and not text",
+        b"5 3\n1 1\xed\xa0\x80 E\nRF\n".to_vec(),
+        Expect::Rejection(Diagnostic::at_line(2, &["R22"])),
+    );
+
+    build.case(
         "a byte that cannot begin a character is not contract input",
         &["R22"],
         "a lone continuation byte on an instruction line. The contract's text \

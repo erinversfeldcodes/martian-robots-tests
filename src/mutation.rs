@@ -72,6 +72,11 @@ pub fn mutate(rng: &mut Rng, mission: &Mission, contract: &Contract) -> Option<M
         return break_the_whitespace(rng, mission, contract);
     }
 
+    // Bytes that are not text, from their own taxonomy.
+    if rng.chance(6) {
+        return break_the_encoding(rng, mission, contract);
+    }
+
     // Two independent defects, when there is more than one robot to put them
     // on. Every other family breaks one thing, so nothing else in this mode
     // asks a program to find a second.
@@ -222,6 +227,71 @@ fn break_the_whitespace(rng: &mut Rng, mission: &Mission, contract: &Contract) -
     })
 }
 
+/// Bytes that are not text, drawn from a taxonomy of how decoders fail rather
+/// than from one value somebody picked.
+///
+/// The classes are chosen for what a lenient decoder does with them, and they
+/// are not equally dangerous. An overlong encoding is the one that matters: a
+/// decoder that reads `C0 A0` as a space turns input the contract refuses into
+/// a mission it accepts, and nothing downstream can tell that happened. A
+/// surrogate and a code point past the last one are what a decoder written
+/// against UTF-16, or against an old table, lets through. A truncation is what
+/// a reader that splits a buffer mid-character produces, and a lone
+/// continuation byte is what arrives when somebody concatenated two halves in
+/// the wrong order.
+///
+/// Every sequence here is invalid whatever it sits next to, because a
+/// canonical mission is ASCII and ASCII is not a continuation byte — but the
+/// invalidity is proved per input all the same.
+fn break_the_encoding(rng: &mut Rng, mission: &Mission, contract: &Contract) -> Option<Mutation> {
+    const CLASSES: [(&str, &[u8]); 10] = [
+        ("an overlong encoding of a space", &[0xc0, 0xa0]),
+        ("an overlong encoding of a digit", &[0xc0, 0xb0]),
+        (
+            "an overlong three-byte encoding of a space",
+            &[0xe0, 0x80, 0xa0],
+        ),
+        ("a UTF-16 surrogate", &[0xed, 0xa0, 0x80]),
+        ("a code point past the last one", &[0xf4, 0x90, 0x80, 0x80]),
+        ("a two-byte character cut short", &[0xc3]),
+        ("a three-byte character cut short", &[0xe2, 0x82]),
+        ("a four-byte character cut short", &[0xf0, 0x9f, 0x92]),
+        ("a byte a Latin-1 decoder reads as a letter", &[0xe9]),
+        ("a byte that cannot begin a character", &[0x80]),
+    ];
+
+    let text = String::from_utf8(mission.canonical()).ok()?;
+    let lines: Vec<String> = text.lines().map(ToString::to_string).collect();
+    let at = rng.below(u32::try_from(lines.len()).ok()?) as usize;
+    let (kind, bytes) = *rng.pick(&CLASSES);
+
+    // Inside the line rather than at either end of it, so no framing rule can
+    // be read as governing instead of R22.
+    let line = lines[at].as_bytes();
+    let into = rng.below(u32::try_from(line.len()).ok()? + 1) as usize;
+    let mut broken = Vec::new();
+    broken.extend_from_slice(&line[..into]);
+    broken.extend_from_slice(bytes);
+    broken.extend_from_slice(&line[into..]);
+
+    let mut rendered = Vec::new();
+    for (number, other) in lines.iter().enumerate() {
+        if number == at {
+            rendered.extend_from_slice(&broken);
+        } else {
+            rendered.extend_from_slice(other.as_bytes());
+        }
+        rendered.push(b'\n');
+    }
+
+    check(&rendered, &Invalidity::Grammar, contract)?;
+    Some(Mutation {
+        kind,
+        rendered,
+        expectation: Expectation::At(at + 1, vec!["R22"]),
+    })
+}
+
 /// Two violations, on two different robots, each of which stands on its own.
 ///
 /// R25's rationale excuses a violation that can only be judged against another
@@ -266,7 +336,7 @@ fn break_two_blocks(rng: &mut Rng, mission: &Mission, contract: &Contract) -> Op
 }
 
 /// Break the framing: a line removed, a line inserted, an ending that ends
-/// nothing, a byte that is not text.
+/// nothing.
 ///
 /// This is where a parser that resynchronises invents a line number, and where
 /// R13, R18 and R19 decide whether one invisible byte flips a rejection into
@@ -281,7 +351,7 @@ fn break_the_framing(rng: &mut Rng, mission: &Mission, contract: &Contract) -> O
     let robot = rng.below(u32::try_from(robots).ok()?) as usize;
     let rejoin = |lines: &[String]| format!("{}\n", lines.join("\n")).into_bytes();
 
-    let (kind, expectation, invalidity, rendered) = match rng.below(6) {
+    let (kind, expectation, invalidity, rendered) = match rng.below(5) {
         // Stop after a position line. R18 is what keeps this a rejection:
         // without it the implicit ending would invent the blank line that
         // makes this a robot with no instructions.
@@ -318,28 +388,9 @@ fn break_the_framing(rng: &mut Rng, mission: &Mission, contract: &Contract) -> O
                 rejoin(&broken),
             )
         }
-        // A byte that cannot begin a character, placed inside a line rather
-        // than inside a line ending so that nothing else can govern it.
-        3 => {
-            let at = 1 + rng.below(u32::try_from(lines.len()).ok()? - 1) as usize;
-            let mut rendered = Vec::new();
-            for (number, line) in lines.iter().enumerate() {
-                rendered.extend_from_slice(line.as_bytes());
-                if number == at {
-                    rendered.push(0x80);
-                }
-                rendered.push(b'\n');
-            }
-            (
-                "a byte that is not text",
-                Expectation::At(at + 1, vec!["R22"]),
-                Invalidity::Grammar,
-                rendered,
-            )
-        }
         // Remove an instruction line from the middle: the position line that
         // followed it is now read as instructions, where it now falls.
-        4 => {
+        3 => {
             if robot + 1 >= robots {
                 return None;
             }
@@ -607,7 +658,7 @@ mod tests {
                 kinds.insert(mutation.kind);
             }
         }
-        assert_eq!(kinds.len(), 26, "only built {kinds:?}");
+        assert_eq!(kinds.len(), 35, "only built {kinds:?}");
     }
 
     #[test]

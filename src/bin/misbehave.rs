@@ -33,7 +33,7 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
 
-    let input = fold_whitespace(input, &defect);
+    let input = fold_whitespace(decode_leniently(input, &defect), &defect);
 
     match Mission::read_back(&input, &contract.grammar) {
         Ok(mission) if mission.is_valid(&contract) => {
@@ -45,6 +45,34 @@ fn main() -> ExitCode {
             ExitCode::from(1)
         }
     }
+}
+
+/// A decoder that does not check for the shortest form, which is the single
+/// most consequential way to be wrong about UTF-8.
+///
+/// `C0 A0` becomes a space, so input the contract refuses becomes a mission
+/// this program answers — and the answer looks entirely reasonable. Nothing
+/// but an input built to be invalid in exactly this way catches it.
+fn decode_leniently(input: Vec<u8>, defect: &str) -> Vec<u8> {
+    if defect != "overlong-utf8" {
+        return input;
+    }
+    let mut decoded = Vec::with_capacity(input.len());
+    let mut at = 0;
+    while at < input.len() {
+        let overlong = matches!(input[at], 0xc0 | 0xc1)
+            && input
+                .get(at + 1)
+                .is_some_and(|next| (0x80..=0xbf).contains(next));
+        if overlong {
+            decoded.push(((input[at] & 0x1f) << 6) | (input[at + 1] & 0x3f));
+            at += 2;
+        } else {
+            decoded.push(input[at]);
+            at += 1;
+        }
+    }
+    decoded
 }
 
 /// A reader whose idea of whitespace came from its language rather than from
