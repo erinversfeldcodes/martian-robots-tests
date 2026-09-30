@@ -226,7 +226,10 @@ pub fn rejections(
         };
         run += 1;
 
-        let expect = Expect::Rejection(Diagnostic::at_line(mutation.line, &mutation.tags));
+        let expect = Expect::Rejection(match &mutation.expectation {
+            mutation::Expectation::At(line, tags) => Diagnostic::at_line(*line, tags),
+            mutation::Expectation::Tagged(tags) => Diagnostic::tagged(tags),
+        });
         let seen = observe(implementation, &[], &mutation.rendered, TIMEOUT)?;
         if let Some(why) = expect.judge(&seen) {
             failures.push(format!(
