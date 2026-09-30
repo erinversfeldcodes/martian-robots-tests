@@ -33,6 +33,14 @@ impl Mission {
 
     pub fn read_back(rendered: &[u8]) -> Result<Self, String> {
         let text = std::str::from_utf8(rendered).map_err(|error| error.to_string())?;
+        // R19's guard, which this reader used to miss: a final line that is
+        // nothing but a carriage return is not a line, and treating it as the
+        // empty tail a real newline leaves behind made `...\n\r` read as
+        // `...\n`. A trailing CR after actual content is a different thing -
+        // half a CRLF the implicit ending completes - and stays valid.
+        if text.rsplit('\n').next() == Some("\r") {
+            return Err("a carriage return that ends nothing".to_string());
+        }
         let lines: Vec<&str> = text
             .split('\n')
             .map(|line| line.strip_suffix('\r').unwrap_or(line))

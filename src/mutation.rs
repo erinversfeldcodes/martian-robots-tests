@@ -5,10 +5,17 @@ use crate::rng::Rng;
 pub struct Mutation {
     pub kind: &'static str,
     pub rendered: Vec<u8>,
-    /// The 1-based physical line the defect sits on. Canonical renderings put
-    /// the grid line first and two lines per robot, so this is arithmetic.
-    pub line: usize,
-    pub tags: Vec<&'static str>,
+    pub expectation: Expectation,
+}
+
+/// What the diagnostic owes, derived from how the mutation was built.
+pub enum Expectation {
+    /// The 1-based physical line the defect sits on, and the rulings any one
+    /// of which governs it.
+    At(usize, Vec<&'static str>),
+    /// Two framing rules can disagree about which line carries the defect,
+    /// and §2.5 does not settle it, so only the ruling is required.
+    Tagged(Vec<&'static str>),
 }
 
 /// How the mutation makes the input invalid, and therefore what must be true
@@ -37,6 +44,15 @@ pub fn mutate(rng: &mut Rng, mission: &Mission, contract: &Contract) -> Option<M
         return None;
     }
     let robot = rng.below(u32::try_from(mission.robots.len()).ok()?) as usize;
+
+    // A third of the time, break the shape of the input rather than the
+    // content of one line. §2.4 says a missing or extra line shifts the blocks
+    // after it and they are diagnosed where they fall, and nothing else here
+    // produces one.
+    if rng.chance(3) {
+        return break_the_framing(rng, mission, contract);
+    }
+
     let broken = if rng.chance(2) {
         break_a_value(
             rng,
@@ -61,8 +77,132 @@ pub fn mutate(rng: &mut Rng, mission: &Mission, contract: &Contract) -> Option<M
     Some(Mutation {
         kind: broken.kind,
         rendered,
-        line: broken.at + 1,
-        tags: broken.tags,
+        expectation: Expectation::At(broken.at + 1, broken.tags),
+    })
+}
+
+/// Break the framing: a line removed, a line inserted, an ending that ends
+/// nothing, a byte that is not text.
+///
+/// This is where a parser that resynchronises invents a line number, and where
+/// R13, R18 and R19 decide whether one invisible byte flips a rejection into
+/// an accepted mission. The expectation is still derived from the edit:
+/// deleting line k means the content that followed it now sits *at* k, so that
+/// is the line a diagnostic should name.
+fn break_the_framing(rng: &mut Rng, mission: &Mission, contract: &Contract) -> Option<Mutation> {
+    let canonical = mission.canonical();
+    let text = String::from_utf8(canonical.clone()).ok()?;
+    let lines: Vec<String> = text.lines().map(ToString::to_string).collect();
+    let robots = mission.robots.len();
+    let robot = rng.below(u32::try_from(robots).ok()?) as usize;
+    let rejoin = |lines: &[String]| format!("{}\n", lines.join("\n")).into_bytes();
+
+    let (kind, expectation, invalidity, rendered) = match rng.below(6) {
+        // Stop after a position line. R18 is what keeps this a rejection:
+        // without it the implicit ending would invent the blank line that
+        // makes this a robot with no instructions.
+        0 => {
+            let keep = 2 + robot * 2;
+            (
+                "input that stops after a position line",
+                Expectation::At(keep, vec!["R13"]),
+                Invalidity::Grammar,
+                rejoin(&lines[..keep]),
+            )
+        }
+        // A carriage return after a terminated line, which R19's guard refuses
+        // to complete into one. Which line carries it is contestable.
+        1 => {
+            let mut rendered = canonical.clone();
+            rendered.push(b'\r');
+            (
+                "a carriage return that would make a line out of nothing",
+                Expectation::Tagged(vec!["R19", "R13"]),
+                Invalidity::Grammar,
+                rendered,
+            )
+        }
+        // A carriage return inside a line, ending nothing.
+        2 => {
+            let at = 1 + rng.below(u32::try_from(lines.len()).ok()? - 1) as usize;
+            let mut broken = lines.clone();
+            broken[at] = format!("\r{}", broken[at]);
+            (
+                "a carriage return that ends nothing",
+                Expectation::At(at + 1, vec!["R19", "R11", "R12"]),
+                Invalidity::Grammar,
+                rejoin(&broken),
+            )
+        }
+        // A byte that cannot begin a character, placed inside a line rather
+        // than inside a line ending so that nothing else can govern it.
+        3 => {
+            let at = 1 + rng.below(u32::try_from(lines.len()).ok()? - 1) as usize;
+            let mut rendered = Vec::new();
+            for (number, line) in lines.iter().enumerate() {
+                rendered.extend_from_slice(line.as_bytes());
+                if number == at {
+                    rendered.push(0x80);
+                }
+                rendered.push(b'\n');
+            }
+            (
+                "a byte that is not text",
+                Expectation::At(at + 1, vec!["R22"]),
+                Invalidity::Grammar,
+                rendered,
+            )
+        }
+        // Remove an instruction line from the middle: the position line that
+        // followed it is now read as instructions, where it now falls.
+        4 => {
+            if robot + 1 >= robots {
+                return None;
+            }
+            let drop = 2 + robot * 2;
+            let mut kept = lines.clone();
+            kept.remove(drop);
+            (
+                "an instruction line removed from the middle",
+                // Removing a line shifts every block after it, so the last
+                // robot is left without an instruction line: R13 governs as
+                // well, and §2.5 asks for one governing tag rather than a
+                // particular one.
+                Expectation::At(drop + 1, vec!["R7", "R12", "R13"]),
+                Invalidity::Semantic,
+                rejoin(&kept),
+            )
+        }
+        // Insert a blank between a position line and its instructions: the
+        // blank is the instruction line (R2), and the instructions that
+        // followed are read as a position line where they now fall.
+        _ => {
+            let put = 2 + robot * 2;
+            let mut kept = lines.clone();
+            kept.insert(put, String::new());
+            (
+                "a blank line inserted before an instruction line",
+                // The same shift, and the same consequence: what was an
+                // instruction line is now a position line, and the block that
+                // was last has nothing left to say.
+                Expectation::At(put + 2, vec!["R12", "R7", "R13"]),
+                Invalidity::Grammar,
+                rejoin(&kept),
+            )
+        }
+    };
+
+    check(
+        &rendered,
+        &invalidity,
+        contract.limits.max_coordinate,
+        contract.limits.max_instructions,
+    )?;
+
+    Some(Mutation {
+        kind,
+        rendered,
+        expectation,
     })
 }
 
@@ -213,7 +353,7 @@ fn check(
 
 #[cfg(test)]
 mod tests {
-    use super::mutate;
+    use super::{Expectation, mutate};
     use crate::contract::Contract;
     use crate::mission::Mission;
     use crate::rng::Rng;
@@ -255,8 +395,21 @@ mod tests {
                 continue;
             };
             let before: Vec<&str> = canonical.lines().collect();
-            let after = String::from_utf8(mutation.rendered.clone()).unwrap();
+            // A mutation that injects a byte which is not text has no line
+            // comparison to make; the rule that built it names the line.
+            let Ok(after) = String::from_utf8(mutation.rendered.clone()) else {
+                continue;
+            };
             let after: Vec<&str> = after.lines().collect();
+            // A framing mutation changes how many lines there are, so a
+            // positional comparison says nothing about it; those are checked
+            // by the rule that built them.
+            let Expectation::At(line, _) = &mutation.expectation else {
+                continue;
+            };
+            if before.len() != after.len() {
+                continue;
+            }
             let changed: Vec<usize> = before
                 .iter()
                 .zip(&after)
@@ -266,11 +419,9 @@ mod tests {
                 .collect();
             assert_eq!(
                 changed,
-                vec![mutation.line],
-                "{} says line {} but changed {:?}",
-                mutation.kind,
-                mutation.line,
-                changed
+                vec![*line],
+                "{} says line {line} but changed {changed:?}",
+                mutation.kind
             );
         }
     }
@@ -286,6 +437,6 @@ mod tests {
                 kinds.insert(mutation.kind);
             }
         }
-        assert_eq!(kinds.len(), 9, "only built {kinds:?}");
+        assert_eq!(kinds.len(), 15, "only built {kinds:?}");
     }
 }

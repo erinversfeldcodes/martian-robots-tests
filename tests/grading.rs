@@ -556,3 +556,37 @@ fn the_control_stays_eccentric_where_the_contract_is_silent() {
         "nor in its help"
     );
 }
+
+#[test]
+fn a_parser_that_swallows_blank_lines_is_caught_by_the_framing_mutations() {
+    let fixtures = Fixtures::new("eats-blanks");
+    // A parser that skips blanks wherever it finds them, including where one
+    // is an instruction line meaning "this robot does nothing". Every case
+    // and every respelling in this suite uses blanks only as separators, so
+    // only a mutation that puts one somewhere load-bearing notices.
+    let implementation = fixtures.implementation(
+        "eats-blanks",
+        "grep -v '^[[:space:]]*$' | printf '0 0 N\\n'",
+    );
+
+    let report = grade_with(
+        &implementation,
+        &[
+            "--spelling",
+            "0",
+            "--properties",
+            "0",
+            "--differential",
+            "0",
+            "--rejections",
+            "60",
+            "--seed",
+            "3",
+        ],
+    );
+    assert!(
+        report.stdout.contains("ACCEPTED"),
+        "a program that answers invalid framing must be caught:\n{}",
+        report.stdout
+    );
+}

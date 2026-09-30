@@ -259,8 +259,9 @@ fn generated(
         println!("ACCEPTED {failure}");
     }
     println!(
-        "rejections: {} mutation(s), seed {}, {} failure(s)",
+        "rejections: {} of {} attempted, seed {}, {} failure(s)",
         rejections.run,
+        budget.rejections,
         budget.seed,
         rejections.failures.len()
     );
