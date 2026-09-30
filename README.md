@@ -42,6 +42,39 @@ disagrees is wrong, and a case is expected to pin it. A question with
 implementation may answer it however it likes. The difference is data rather
 than prose so that a tool can act on it.
 
+## Measuring coverage through the suite
+
+This suite is meant to be the only test oracle an implementation has. That
+makes one thing awkward: the implementation's code never runs inside its own
+test binary, so it cannot measure its own coverage the usual way. The only
+place it executes is a process this suite spawned.
+
+So the instrumentation has to work *through* that boundary, and it does. The
+environment is inherited — nothing in the runner clears it — which is most of
+what is needed:
+
+```
+RUSTFLAGS="-C instrument-coverage" cargo build
+LLVM_PROFILE_FILE="target/coverage/run.profraw" \
+  martian-robots-verify --bin target/debug/martian-robots
+llvm-profdata merge -sparse target/coverage/*.profraw -o merged.profdata
+llvm-cov report target/debug/martian-robots -instr-profile=merged.profdata
+```
+
+The part that does not work by itself is one profile per process. A run spawns
+several hundred, and LLVM writes to the path it is given, so a plain path has
+every process writing the same file — and the result is not an error, it is a
+coverage number built from whichever process finished last. A path that cannot
+distinguish processes therefore gains `%p`; one that already contains `%p` or
+`%m` is left exactly as the consumer wrote it. The recipe above works because of
+that, not because the path in it is special.
+
+What this measures is what the suite reaches, which is not the same as whether
+the implementation is right — that is what the grade is for. It is still the
+number worth watching, because under a sole-oracle arrangement any line the
+suite cannot reach is either dead code or untested code, and nothing else will
+tell you which.
+
 ## Running the suite
 
 ```
@@ -96,6 +129,11 @@ corpus and a green run says something about the next one. `--seed random`
 explores a wider corpus and prints the seed it chose, which is the seed to pass
 back. The default is the one `tests/corpus.rs` writes down, so the inputs a bare
 run draws are the ones somebody reviewed.
+
+In CI, run the fixed seed on every change and a random one on a schedule: the
+first is the gate, and a gate whose corpus moves on its own is not one; the
+second is what finds the next case worth writing down, and it prints the seed
+to pass back when it does.
 
 A mode that is asked to run and judges nothing is the suite failing to run, not
 the implementation passing: it exits 2, the way a mistyped `--case` does. A

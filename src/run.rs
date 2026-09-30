@@ -48,6 +48,32 @@ impl Observation {
     }
 }
 
+/// Where a spawned process should write its coverage profile.
+///
+/// This suite is meant to be the only test oracle an implementation has: its
+/// code is exercised by another process spawning it, so the only way it can
+/// measure its own coverage is for the instrumentation to work *through* that
+/// boundary. Inheriting the environment is most of it, and that happens by
+/// itself — nothing here clears it.
+///
+/// What does not happen by itself is one profile per process. A run spawns
+/// hundreds, and LLVM's instrumentation writes to the path it is given, so a
+/// pattern with nothing process-specific in it has every process writing the
+/// same file. The result is not an error: it is a coverage number built from
+/// whichever process happened to write last, which is the same species of
+/// quiet wrongness this suite exists to refuse. So a pattern that cannot
+/// distinguish processes gains `%p`, and one that already can is left alone.
+fn profile_pattern(current: Option<&str>) -> Option<String> {
+    let current = current?;
+    if current.is_empty() || current.contains("%p") || current.contains("%m") {
+        return None;
+    }
+    Some(match current.rsplit_once('.') {
+        Some((stem, extension)) if !stem.is_empty() => format!("{stem}-%p.{extension}"),
+        _ => format!("{current}-%p"),
+    })
+}
+
 /// Run a program the way a shell would: bytes to stdin, bytes from stdout and
 /// stderr, an exit code, and a deadline.
 ///
@@ -63,7 +89,14 @@ pub fn observe(
     stdin: &[u8],
     timeout: Duration,
 ) -> Result<Observation, String> {
-    let mut child = Command::new(program)
+    let mut spawning = Command::new(program);
+    // The environment is inherited, which is what lets an instrumented
+    // implementation record coverage from inside a run. Only the profile path
+    // is touched, and only when it could not tell two processes apart.
+    if let Some(pattern) = profile_pattern(std::env::var("LLVM_PROFILE_FILE").ok().as_deref()) {
+        spawning.env("LLVM_PROFILE_FILE", pattern);
+    }
+    let mut child = spawning
         .args(arguments)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -122,7 +155,7 @@ fn ending_of(status: std::process::ExitStatus) -> Ending {
 
 #[cfg(test)]
 mod tests {
-    use super::{Ending, TIMEOUT, observe};
+    use super::{Ending, TIMEOUT, observe, profile_pattern};
     use std::ffi::OsString;
     use std::path::PathBuf;
     use std::time::Duration;
@@ -141,6 +174,52 @@ mod tests {
         assert_eq!(seen.stdout, b"out");
         assert_eq!(seen.stderr, b"err");
         assert_eq!(seen.ending, Ending::Code(3));
+    }
+
+    #[test]
+    fn the_environment_reaches_the_program() {
+        // Nothing here clears the environment, and an instrumented
+        // implementation depends on that: this suite is its only test oracle,
+        // so the only place its coverage can be recorded is inside a process
+        // this function spawned. A stray `env_clear` would leave a consumer
+        // with an empty profile and no reason to suspect one.
+        let (program, arguments) = shell("printf '%s' \"$PATH\"");
+        let seen = observe(&program, &arguments, b"", TIMEOUT).unwrap();
+        let inherited = String::from_utf8(seen.stdout).expect("a path");
+        assert_eq!(
+            inherited,
+            std::env::var("PATH").expect("a PATH to inherit"),
+            "the spawned program did not inherit the environment"
+        );
+    }
+
+    #[test]
+    fn a_profile_path_that_cannot_tell_two_processes_apart_gains_a_process_id() {
+        // A run spawns hundreds of processes. Without this, they all write one
+        // file and the coverage number comes from whichever finished last.
+        assert_eq!(
+            profile_pattern(Some("cov.profraw")).as_deref(),
+            Some("cov-%p.profraw")
+        );
+        assert_eq!(
+            profile_pattern(Some("target/coverage/martian.profraw")).as_deref(),
+            Some("target/coverage/martian-%p.profraw")
+        );
+        assert_eq!(
+            profile_pattern(Some("profile")).as_deref(),
+            Some("profile-%p")
+        );
+    }
+
+    #[test]
+    fn a_profile_path_that_already_distinguishes_processes_is_left_alone() {
+        // `%p` and `%m` are LLVM's own patterns for this, and a consumer who
+        // wrote one knows what they want. Rewriting it would move their files.
+        assert_eq!(profile_pattern(Some("cov-%p.profraw")), None);
+        assert_eq!(profile_pattern(Some("cov-%m.profraw")), None);
+        assert_eq!(profile_pattern(Some("%m-%p.profraw")), None);
+        assert_eq!(profile_pattern(None), None);
+        assert_eq!(profile_pattern(Some("")), None);
     }
 
     #[test]
