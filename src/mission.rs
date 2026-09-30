@@ -1,6 +1,6 @@
 use std::fmt::Write as _;
 
-use crate::contract::Contract;
+use crate::contract::{Contract, Grammar};
 use crate::rng::Rng;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,7 +31,16 @@ impl Mission {
         text.into_bytes()
     }
 
-    pub fn read_back(rendered: &[u8]) -> Result<Self, String> {
+    /// Read a mission back, against the grammar it has to match.
+    ///
+    /// This decides "does this input match the grammar" for the generators,
+    /// including the proof that a mutation is genuinely invalid — so it has to
+    /// be faithful to the grammar rather than convenient. It used to take no
+    /// grammar at all, which meant it hardcoded the separators and accepted
+    /// any single character as an orientation and any characters as
+    /// instructions: a reader written to be permissive, deciding what counts
+    /// as a grammar violation.
+    pub fn read_back(rendered: &[u8], grammar: &Grammar) -> Result<Self, String> {
         let text = std::str::from_utf8(rendered).map_err(|error| error.to_string())?;
         // R19's guard, which this reader used to miss: a final line that is
         // nothing but a carriage return is not a line, and treating it as the
@@ -50,14 +59,15 @@ impl Mission {
             _ => &lines[..],
         };
 
-        let blank = |line: &str| line.trim_matches([' ', '\t']).is_empty();
+        let separators = grammar.separators.as_slice();
+        let blank = |line: &str| line.trim_matches(separators).is_empty();
         let mut at = 0;
         while at < lines.len() && blank(lines[at]) {
             at += 1;
         }
         let grid = lines.get(at).ok_or("no grid line")?;
         at += 1;
-        let (max_x, max_y) = match tokens(grid)[..] {
+        let (max_x, max_y) = match tokens(grid, separators)[..] {
             [x, y] => (number(x)?, number(y)?),
             _ => return Err(format!("grid line is not two numbers: {grid:?}")),
         };
@@ -73,19 +83,33 @@ impl Mission {
             let position = lines[at];
             let instructions = lines.get(at + 1).ok_or("no instruction line")?;
             at += 2;
-            let (x, y, facing) = match tokens(position)[..] {
-                [x, y, facing] if facing.chars().count() == 1 => (
-                    number(x)?,
-                    number(y)?,
-                    facing.chars().next().expect("one character"),
-                ),
+            let (x, y, facing) = match tokens(position, separators)[..] {
+                [x, y, facing]
+                    if facing.chars().count() == 1
+                        && grammar
+                            .orientations
+                            .contains(&facing.chars().next().expect("one character")) =>
+                {
+                    (
+                        number(x)?,
+                        number(y)?,
+                        facing.chars().next().expect("one character"),
+                    )
+                }
                 _ => return Err(format!("position line is malformed: {position:?}")),
             };
+            let instructions = instructions.trim_matches(separators);
+            if let Some(wrong) = instructions
+                .chars()
+                .find(|step| !grammar.instructions.contains(step))
+            {
+                return Err(format!("not an instruction: {wrong:?}"));
+            }
             robots.push(Robot {
                 x,
                 y,
                 facing,
-                instructions: instructions.trim_matches([' ', '\t']).to_string(),
+                instructions: instructions.to_string(),
             });
         }
 
@@ -111,17 +135,23 @@ impl Mission {
             .all(|robot| robot.x <= self.max_x && robot.y <= self.max_y)
     }
 
-    pub fn is_valid(&self, max_coordinate: u32, max_instructions: u32) -> bool {
+    /// Whether this is a mission the contract accepts.
+    ///
+    /// The vocabularies come from the grammar rather than being written out
+    /// again here: two copies of `N E S W` is how a suite drifts from the
+    /// contract it enforces.
+    pub fn is_valid(&self, contract: &Contract) -> bool {
+        let max_coordinate = contract.limits.max_coordinate;
         self.max_x <= max_coordinate
             && self.max_y <= max_coordinate
             && self.every_robot_starts_on_the_grid()
             && self.robots.iter().all(|robot| {
-                matches!(robot.facing, 'N' | 'E' | 'S' | 'W')
-                    && robot.instructions.len() <= max_instructions as usize
+                contract.grammar.orientations.contains(&robot.facing)
+                    && robot.instructions.len() <= contract.limits.max_instructions as usize
                     && robot
                         .instructions
                         .chars()
-                        .all(|step| matches!(step, 'L' | 'R' | 'F'))
+                        .all(|step| contract.grammar.instructions.contains(&step))
             })
     }
 
@@ -246,8 +276,8 @@ fn steps(rng: &mut Rng, max_instructions: u32) -> usize {
     drawn as usize
 }
 
-fn tokens(line: &str) -> Vec<&str> {
-    line.split([' ', '\t'])
+fn tokens<'a>(line: &'a str, separators: &[char]) -> Vec<&'a str> {
+    line.split(separators)
         .filter(|part| !part.is_empty())
         .collect()
 }
@@ -261,8 +291,12 @@ fn number(token: &str) -> Result<u32, String> {
 #[cfg(test)]
 mod tests {
     use super::{Mission, Robot};
-    use crate::contract::Contract;
+    use crate::contract::{Contract, Grammar};
     use crate::rng::Rng;
+
+    fn grammar() -> Grammar {
+        Contract::load().expect("a coherent contract").grammar
+    }
 
     #[test]
     fn a_canonical_mission_reads_back_as_itself() {
@@ -284,7 +318,10 @@ mod tests {
                 },
             ],
         };
-        assert_eq!(Mission::read_back(&mission.canonical()).unwrap(), mission);
+        assert_eq!(
+            Mission::read_back(&mission.canonical(), &grammar()).unwrap(),
+            mission
+        );
     }
 
     #[test]
@@ -294,12 +331,12 @@ mod tests {
             max_y: 0,
             robots: Vec::new(),
         };
-        assert_eq!(Mission::read_back(b"0 0\n").unwrap(), mission);
+        assert_eq!(Mission::read_back(b"0 0\n", &grammar()).unwrap(), mission);
     }
 
     #[test]
     fn blank_lines_are_separators_and_an_empty_instruction_line_is_not() {
-        let read = Mission::read_back(b"\n \n5 3\n1 1 E\n\n\n0 3 W\nLF\n").unwrap();
+        let read = Mission::read_back(b"\n \n5 3\n1 1 E\n\n\n0 3 W\nLF\n", &grammar()).unwrap();
         assert_eq!(read.robots.len(), 2);
         assert_eq!(read.robots[0].instructions, "");
         assert_eq!(read.robots[1].instructions, "LF");
@@ -312,7 +349,7 @@ mod tests {
         for _ in 0..500 {
             let mission = Mission::draw(&mut rng, &contract);
             assert_eq!(
-                Mission::read_back(&mission.canonical()).unwrap(),
+                Mission::read_back(&mission.canonical(), &grammar()).unwrap(),
                 mission,
                 "{mission:?}"
             );

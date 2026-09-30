@@ -146,12 +146,7 @@ fn smaller(mission: &Mission, contract: &Contract) -> Vec<Mission> {
         }
     }
 
-    candidates.retain(|candidate| {
-        candidate.is_valid(
-            contract.limits.max_coordinate,
-            contract.limits.max_instructions,
-        )
-    });
+    candidates.retain(|candidate| candidate.is_valid(contract));
     candidates
 }
 
@@ -255,10 +250,7 @@ mod tests {
             let mission = Mission::draw_busy(&mut rng, &contract);
             for candidate in smaller(&mission, &contract) {
                 assert!(
-                    candidate.is_valid(
-                        contract.limits.max_coordinate,
-                        contract.limits.max_instructions
-                    ),
+                    candidate.is_valid(&contract),
                     "{}",
                     String::from_utf8_lossy(&candidate.canonical())
                 );

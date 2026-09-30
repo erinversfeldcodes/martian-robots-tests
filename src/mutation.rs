@@ -21,6 +21,15 @@ pub enum Expectation {
 /// How the mutation makes the input invalid, and therefore what must be true
 /// of it before it is used to grade anybody.
 enum Invalidity {
+    /// The grammar refuses it: `Mission::read_back` cannot read it against the
+    /// grammar the contract publishes.
+    ///
+    /// The two vocabulary kinds were `Semantic` until the reader was made
+    /// faithful to the grammar. They were always grammar defects — a letter
+    /// outside `L R F` does not match the `instruction` production — and the
+    /// label was following the reader rather than the contract. Saying
+    /// `Grammar` is also the stricter claim: it demands the input be
+    /// unreadable, where `Semantic` accepts either outcome.
     Grammar,
     Semantic,
     /// Refused, and which mechanism refuses it is incidental. A character that
@@ -81,12 +90,7 @@ pub fn mutate(rng: &mut Rng, mission: &Mission, contract: &Contract) -> Option<M
     };
 
     let rendered = format!("{}\n", lines.join("\n")).into_bytes();
-    check(
-        &rendered,
-        &broken.invalidity,
-        max_coordinate,
-        max_instructions,
-    )?;
+    check(&rendered, &broken.invalidity, contract)?;
 
     Some(Mutation {
         kind: broken.kind,
@@ -181,21 +185,13 @@ fn break_the_whitespace(rng: &mut Rng, mission: &Mission, contract: &Contract) -
     let mut restored = lines.clone();
     restored[at] = mutated[at].replace(foreign, &space.to_string());
     let restored = format!("{}\n", restored.join("\n")).into_bytes();
-    if !Mission::read_back(&restored).is_ok_and(|mission| {
-        mission.is_valid(
-            contract.limits.max_coordinate,
-            contract.limits.max_instructions,
-        )
-    }) {
+    if !Mission::read_back(&restored, &contract.grammar)
+        .is_ok_and(|mission| mission.is_valid(contract))
+    {
         return None;
     }
 
-    check(
-        &rendered,
-        &Invalidity::Either,
-        contract.limits.max_coordinate,
-        contract.limits.max_instructions,
-    )?;
+    check(&rendered, &Invalidity::Either, contract)?;
 
     // Q6 leaves the characterisation open: a bad separator, or a character
     // outside the vocabulary. Any governing ruling satisfies §2.5 - but R7's
@@ -326,12 +322,7 @@ fn break_the_framing(rng: &mut Rng, mission: &Mission, contract: &Contract) -> O
         }
     };
 
-    check(
-        &rendered,
-        &invalidity,
-        contract.limits.max_coordinate,
-        contract.limits.max_instructions,
-    )?;
+    check(&rendered, &invalidity, contract)?;
 
     Some(Mutation {
         kind,
@@ -397,7 +388,7 @@ fn break_a_value(
                 kind: "an orientation outside the vocabulary",
                 at: position,
                 tags: vec!["R7", "R12"],
-                invalidity: Invalidity::Semantic,
+                invalidity: Invalidity::Grammar,
             }
         }
         _ => {
@@ -453,7 +444,7 @@ fn break_the_shape(
                 kind: "an instruction outside the vocabulary",
                 at: instructions,
                 tags: vec!["R7", "R12"],
-                invalidity: Invalidity::Semantic,
+                invalidity: Invalidity::Grammar,
             }
         }
         _ => {
@@ -471,17 +462,10 @@ fn break_the_shape(
     }
 }
 
-fn check(
-    rendered: &[u8],
-    invalidity: &Invalidity,
-    max_coordinate: u32,
-    max_instructions: u32,
-) -> Option<()> {
-    let refused = match (invalidity, Mission::read_back(rendered)) {
+fn check(rendered: &[u8], invalidity: &Invalidity, contract: &Contract) -> Option<()> {
+    let refused = match (invalidity, Mission::read_back(rendered, &contract.grammar)) {
         (Invalidity::Grammar, read) => read.is_err(),
-        (Invalidity::Semantic | Invalidity::Either, Ok(mission)) => {
-            !mission.is_valid(max_coordinate, max_instructions)
-        }
+        (Invalidity::Semantic | Invalidity::Either, Ok(mission)) => !mission.is_valid(contract),
         (Invalidity::Semantic | Invalidity::Either, Err(_)) => true,
     };
     refused.then_some(())
@@ -503,12 +487,8 @@ mod tests {
             let mission = Mission::draw(&mut rng, &contract);
             if let Some(mutation) = mutate(&mut rng, &mission, &contract) {
                 built += 1;
-                let valid = Mission::read_back(&mutation.rendered).is_ok_and(|read| {
-                    read.is_valid(
-                        contract.limits.max_coordinate,
-                        contract.limits.max_instructions,
-                    )
-                });
+                let valid = Mission::read_back(&mutation.rendered, &contract.grammar)
+                    .is_ok_and(|read| read.is_valid(&contract));
                 assert!(
                     !valid,
                     "{} left valid input: {:?}",

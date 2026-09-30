@@ -91,7 +91,7 @@ fn ahead(x: u32, y: u32, facing: char) -> (i64, i64) {
 #[cfg(test)]
 mod tests {
     use super::run;
-    use crate::contract::{SAMPLE_INPUT, SAMPLE_OUTPUT};
+    use crate::contract::{Contract, SAMPLE_INPUT, SAMPLE_OUTPUT};
     use crate::mission::Mission;
 
     #[test]
@@ -99,12 +99,17 @@ mod tests {
         // The only external truth available to this suite: input and output
         // both published, by somebody who wrote neither of these
         // implementations.
-        let mission = Mission::read_back(SAMPLE_INPUT).expect("the sample is a valid mission");
+        let mission =
+            Mission::read_back(SAMPLE_INPUT, &grammar()).expect("the sample is a valid mission");
         assert_eq!(run(&mission), SAMPLE_OUTPUT);
     }
 
+    fn grammar() -> crate::contract::Grammar {
+        Contract::load().expect("a coherent contract").grammar
+    }
+
     fn answer(input: &str) -> String {
-        let mission = Mission::read_back(input.as_bytes()).expect("a valid mission");
+        let mission = Mission::read_back(input.as_bytes(), &grammar()).expect("a valid mission");
         String::from_utf8(run(&mission)).expect("text")
     }
 

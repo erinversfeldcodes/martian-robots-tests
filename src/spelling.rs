@@ -287,7 +287,7 @@ mod tests {
             for _ in 0..8 {
                 let rendered = render(&mission, &Spelling::draw(&mut rng, &contract.grammar));
                 assert_eq!(
-                    Mission::read_back(&rendered).as_ref(),
+                    Mission::read_back(&rendered, &contract.grammar).as_ref(),
                     Ok(&mission),
                     "rendering changed the mission: {:?}",
                     String::from_utf8_lossy(&rendered)

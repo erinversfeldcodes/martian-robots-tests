@@ -66,7 +66,7 @@ pub fn spelling_differential(
             // mistake.
             spelling::permitted(&rendered)
                 .map_err(|why| format!("the generator emitted {why}: {}", show(&rendered)))?;
-            if Mission::read_back(&rendered).as_ref() != Ok(&mission) {
+            if Mission::read_back(&rendered, &contract.grammar).as_ref() != Ok(&mission) {
                 return Err(format!(
                     "the generator changed the mission it was rendering: {}",
                     show(&rendered)
@@ -155,7 +155,7 @@ pub fn properties(
         // shows up. The rest is a wider respelled corpus, which is worth
         // having for its own sake.
         let spelling = (round % 2 == 1).then(|| Spelling::draw(&mut rng, &contract.grammar));
-        let input = write(&mission, spelling.as_ref())?;
+        let input = write(&mission, spelling.as_ref(), contract)?;
 
         let Some(said) = answer(implementation, &input)? else {
             violations.push(format!(
@@ -200,7 +200,7 @@ pub fn properties(
             continue;
         }
         let longer = mission.with_another_robot(&mut rng, contract);
-        let longer_input = write(&longer, spelling.as_ref())?;
+        let longer_input = write(&longer, spelling.as_ref(), contract)?;
         if !longer.every_robot_starts_on_the_grid() {
             return Err(format!(
                 "the generator built an invalid mission: {}",
@@ -241,14 +241,18 @@ pub fn properties(
 /// generator checking its own work either way: a rendering that broke the
 /// grammar would turn an invariant into a rejection test, and one that changed
 /// the mission would blame a program for the generator's mistake.
-fn write(mission: &Mission, spelling: Option<&Spelling>) -> Result<Vec<u8>, String> {
+fn write(
+    mission: &Mission,
+    spelling: Option<&Spelling>,
+    contract: &Contract,
+) -> Result<Vec<u8>, String> {
     let Some(spelling) = spelling else {
         return Ok(mission.canonical());
     };
     let rendered = spelling::render(mission, spelling);
     spelling::permitted(&rendered)
         .map_err(|why| format!("the generator emitted {why}: {}", show(&rendered)))?;
-    if Mission::read_back(&rendered).as_ref() != Ok(mission) {
+    if Mission::read_back(&rendered, &contract.grammar).as_ref() != Ok(mission) {
         return Err(format!(
             "the generator changed the mission it was rendering: {}",
             show(&rendered)
@@ -358,10 +362,7 @@ pub fn differential(
 
     for _ in 0..budget.differential {
         let mission = Mission::draw_busy(&mut rng, contract);
-        if !mission.is_valid(
-            contract.limits.max_coordinate,
-            contract.limits.max_instructions,
-        ) {
+        if !mission.is_valid(contract) {
             return Err(format!(
                 "the generator built an invalid mission: {}",
                 show(&mission.canonical())

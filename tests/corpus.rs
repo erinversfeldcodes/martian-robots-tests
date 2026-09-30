@@ -73,7 +73,7 @@ fn the_missions_a_seed_names() {
 fn the_spellings_a_seed_names() {
     let contract = Contract::load().unwrap();
     let mut rng = Rng::from_seed(SEED);
-    let mission = Mission::read_back(b"5 3\n1 1 E\nRF\n").unwrap();
+    let mission = Mission::read_back(b"5 3\n1 1 E\nRF\n", &contract.grammar).unwrap();
     let mut described = Vec::new();
     let mut bytes = Vec::new();
     for _ in 0..8 {

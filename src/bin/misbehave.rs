@@ -33,13 +33,8 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
 
-    match Mission::read_back(&input) {
-        Ok(mission)
-            if mission.is_valid(
-                contract.limits.max_coordinate,
-                contract.limits.max_instructions,
-            ) =>
-        {
+    match Mission::read_back(&input, &contract.grammar) {
+        Ok(mission) if mission.is_valid(&contract) => {
             print!("{}", run(&mission, &defect));
             ExitCode::SUCCESS
         }
