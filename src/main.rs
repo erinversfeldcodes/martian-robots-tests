@@ -29,6 +29,7 @@ Usage: martian-robots-verify --bin <path> [--quiet]
                  Q3 leaves a hang to grader policy, so this is policy: a
                  loaded runner should not read as a conformance failure
   --contract     write the contract to stdout, as one document
+  --version      print the version of this release and exit
   -h, --help     print this message and exit
 
 Exit codes:
@@ -52,6 +53,7 @@ enum Task {
     Show,
     List,
     Help,
+    Version,
 }
 
 impl Task {
@@ -72,6 +74,7 @@ impl Task {
                 "-h" | "--help" => return Ok(Self::Help),
                 "--contract" => return Ok(Self::Show),
                 "--cases" => return Ok(Self::List),
+                "--version" => return Ok(Self::Version),
                 "--quiet" => quiet = true,
                 "--bin" => {
                     let path = args.next().ok_or("--bin needs a path")?;
@@ -141,6 +144,17 @@ fn main() -> ExitCode {
     match task {
         Task::Help => {
             print!("{USAGE}");
+            ExitCode::SUCCESS
+        }
+        Task::Version => {
+            // The contract and the suite share one version, and a test holds
+            // them equal. Both are printed anyway: whoever installed this
+            // should not have to know the invariant to read the answer.
+            println!(
+                "martian-robots-verify {} (contract {})",
+                env!("CARGO_PKG_VERSION"),
+                contract.version
+            );
             ExitCode::SUCCESS
         }
         Task::List => {
