@@ -56,6 +56,7 @@ ok   the brief's sample, byte for byte
 FAIL a grid coordinate past the maximum is refused
       rejected input must produce no stdout, got "1 1 E\n"
       stdin: "51 3\n"
+      case: boundaries/a-grid-coordinate-past-the-maximum-is-refused (--case <id>)
       enforces: R5
 contract <version>: <n> of <n> ruled question(s) enforced
 result: <n> case(s) run, <n> passed, <n> failed
@@ -64,6 +65,14 @@ result: <n> case(s) run, <n> passed, <n> failed
 The coverage line is deliberately unflattering: it counts the ruled questions
 some case cites, so the distance between the contract and the suite is visible
 on every run rather than discoverable by reading both.
+
+Every failure cites an id, and the id runs it again: `--case <id>` runs that
+case and no generated modes, and a group name on its own runs the group, so
+`--case scent` is every scent case. `--cases` lists them all. An id is
+`group/slug` rather than a number, because inserting a case renumbers its
+neighbours and `C17` tells a reader nothing; a mistyped one is an error rather
+than a clean run of nothing, which is the shape of every silently empty suite
+there has ever been.
 
 ## Generated missions
 
@@ -95,7 +104,7 @@ every robot at `0 0 N` agrees with itself perfectly. So the suite also states
 things that are true of an answer on its own, and checks those:
 
 ```
-      one line per robot, in input order
+      one line per robot
       every line is canonical
       every reported position is on the grid
       a robot that cannot move reports where it started
@@ -120,14 +129,30 @@ instruction shapes on purpose — a uniformly random instruction string is
 all-`F` about once in 3^n, so without the bias the strongest predicates would
 almost never fire. `--properties <n>` sets the corpus size.
 
+Half the corpus arrives respelled rather than canonical. A mission is the same
+mission however its whitespace is written, so every predicate holds over a
+respelling too, and two of them are questions the spelling mode never asks of
+one: whether an unusual spelling is answered the same way twice, and whether
+appending a robot written that way disturbs the robots before it.
+
+Missions are also drawn crowded. Most carry a robot or two, but the tail of the
+draw reaches a dozen or more, because three robots in the right order say
+nothing about the ninth — and a program that answers from a map keyed by
+position, or sorts before printing, agrees with everything until there is
+enough to disagree about.
+
 ## Generated rejections
 
 The last mode breaks valid missions on purpose, one way at a time: a
 coordinate past a limit, a start off the world, a letter outside a vocabulary,
-a token too many or too few, a separator the grammar does not have.
+a token too many or too few, a line removed or inserted, and a character the
+grammar does not admit as whitespace — that last one across every line type and
+every position a space would have been legal, including hidden inside an
+otherwise-legal run of spaces, which is where a reader that trims and splits
+blames the innocent space beside the offender.
 
 ```
-rejections: <n> mutation(s), seed <n>, <n> failure(s)
+rejections: <n> of <n> attempted, seed <n>, <n> failure(s)
 ```
 
 Two things make this more than a fuzzer. The expected line and the admissible
@@ -155,6 +180,14 @@ This is the only mode that catches a plainly wrong answer to a mixed
 instruction string. A robot that ends one cell east of where it belongs agrees
 with itself across every respelling and satisfies every invariant; nothing
 short of another implementation notices.
+
+The first disagreement in a run is reduced before it is reported: the suite
+runs the program again against smaller and smaller missions, keeping the
+smallest that still disagrees. A drawn failure is a dozen robots and several
+hundred bytes, which reproduces the bug and explains nothing; a reduced one is
+usually one robot on a small world, where the difference is the whole input.
+Only the first is reduced, because each candidate costs a process and the rest
+of the list is there to say how widespread the problem is.
 
 What it proves is **agreement**, and the difference matters. A disagreement is
 a defect in the program under test, or a place where the contract admits two
@@ -208,6 +241,14 @@ thorough gate until somebody tries to satisfy it.
 
 It parses and diagnoses; the simulation is the suite's own reference, because a
 third simulator would be a third chance to be wrong about the same section.
+
+`src/bin/misbehave.rs` is the other half of that argument: a gallery of programs
+wrong in exactly one way about the scent rule — a scent that remembers a
+heading, one spent on the robot it saves, one looked up only where a robot was
+placed, a blocked move that ends the run, a lost robot that keeps going. The
+tests assert which cases each one fails, both ways round. A case no wrong
+program fails has never been shown to do anything, and a case that fails a
+program it was not written for is pinning more than it claims.
 
 ## Scope
 
