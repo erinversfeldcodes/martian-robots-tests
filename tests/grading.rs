@@ -13,6 +13,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use martian_robots_verify::cases;
+use martian_robots_verify::contract::Contract;
+
 struct Fixtures {
     directory: PathBuf,
 }
@@ -706,15 +709,21 @@ const NEAR_MISSES: [(&str, &[&str]); 6] = [
     ),
 ];
 
-const SCENT_CASES: [&str; 7] = [
-    "a scent blocks a departure by a different edge",
-    "a scent is not used up by the robot it saves",
-    "a scent marks the cell and never the robot",
-    "an ignored move does not end the run",
-    "scents on different cells each protect their own",
-    "a scent protects a robot that walked onto the cell",
-    "a lost robot does not run the rest of its instructions",
-];
+/// The scent group, read out of the catalogue rather than written down again.
+///
+/// Written down, this list was a promise nobody had to keep: adding an eighth
+/// scent case created no obligation to show that anything fails it, and the
+/// principle the README states — a case no wrong program fails has never been
+/// shown to do anything — was enforced for seven cases and asserted nowhere
+/// else. Derived, a new case fails the tests below until the gallery covers it.
+fn scent_cases() -> Vec<String> {
+    let contract = Contract::load().expect("a coherent contract");
+    cases::catalogue(&contract)
+        .into_iter()
+        .filter(|case| case.id.starts_with("scent/"))
+        .map(|case| case.name)
+        .collect()
+}
 
 #[test]
 fn every_misreading_of_the_scent_rule_fails_exactly_the_cases_it_should() {
@@ -727,7 +736,8 @@ fn every_misreading_of_the_scent_rule_fails_exactly_the_cases_it_should() {
         let implementation =
             fixtures.implementation(defect, &format!("MISBEHAVE={defect} exec {gallery}"));
         let report = grade(&implementation);
-        for case in SCENT_CASES {
+        for case in scent_cases() {
+            let case = case.as_str();
             let failed = report.failure(case).is_some();
             assert_eq!(
                 failed,
@@ -747,9 +757,13 @@ fn every_misreading_of_the_scent_rule_fails_exactly_the_cases_it_should() {
 #[test]
 fn every_semantic_case_is_failed_by_some_wrong_program() {
     // A case nothing fails is a case that has never been shown to do anything.
-    for case in SCENT_CASES {
+    let cases = scent_cases();
+    assert!(cases.len() >= 7, "only {} scent case(s)", cases.len());
+    for case in cases {
         assert!(
-            NEAR_MISSES.iter().any(|(_, cases)| cases.contains(&case)),
+            NEAR_MISSES
+                .iter()
+                .any(|(_, names)| names.contains(&case.as_str())),
             "no near miss in the gallery fails {case:?}, so nothing shows it \
              discriminates"
         );

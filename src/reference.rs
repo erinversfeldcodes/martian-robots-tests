@@ -159,6 +159,48 @@ mod tests {
     }
 
     #[test]
+    fn the_reference_satisfies_every_invariant_it_underwrites() {
+        // The differential mode's verdict and the shrinker's predicate both
+        // rest on this implementation being right, and what stood behind it
+        // was the brief's sample and the hand examples above. The invariant
+        // battery is already written and needs no second opinion, so it can be
+        // turned on the oracle as readily as on a candidate: a statement true
+        // of any correct answer is true of this one, over a corpus no reviewer
+        // chose.
+        use crate::properties::{self, Verdict};
+        use crate::rng::Rng;
+
+        let contract = Contract::load().expect("a coherent contract");
+        let mut rng = Rng::from_seed(71);
+        let mut fired = [0u32; properties::NAMES.len()];
+
+        for _ in 0..600 {
+            let mission = Mission::draw_shaped(&mut rng, &contract);
+            let answered = run(&mission);
+            for (index, verdict) in properties::check(&mission, &answered)
+                .into_iter()
+                .enumerate()
+            {
+                match verdict {
+                    Verdict::NotApplicable => {}
+                    Verdict::Held => fired[index] += 1,
+                    Verdict::Violated(why) => panic!(
+                        "the reference violates {:?}: {why}\n  on {}",
+                        properties::NAMES[index],
+                        String::from_utf8_lossy(&mission.canonical())
+                    ),
+                }
+            }
+        }
+
+        // A predicate that never evaluated says nothing about the reference,
+        // which is the same trap the mode itself prints firing counts for.
+        for (count, name) in fired.iter().zip(properties::NAMES) {
+            assert!(*count > 0, "no drawn mission evaluated {name:?}");
+        }
+    }
+
+    #[test]
     fn a_mission_with_no_robots_says_nothing() {
         assert_eq!(answer("5 3\n"), "");
     }
