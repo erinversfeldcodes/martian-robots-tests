@@ -72,14 +72,18 @@ fn the_spellings_a_seed_names() {
     let contract = Contract::load().unwrap();
     let mut rng = Rng::from_seed(SEED);
     let mission = Mission::read_back(b"5 3\n1 1 E\nRF\n").unwrap();
+    let mut described = Vec::new();
     let mut bytes = Vec::new();
     for _ in 0..8 {
-        bytes.extend_from_slice(&spelling::render(
-            &mission,
-            &Spelling::draw(&mut rng, &contract.grammar),
-        ));
+        let spelling = Spelling::draw(&mut rng, &contract.grammar);
+        described.push(spelling.describe());
+        bytes.extend_from_slice(&spelling::render(&mission, &spelling));
     }
 
+    assert_eq!(
+        described, EXPECTED_SPELLINGS,
+        "the spellings a seed names moved"
+    );
     assert_eq!(digest(&bytes), EXPECTED_SPELLING_DIGEST);
 }
 
@@ -119,6 +123,16 @@ const EXPECTED_MISSIONS: [&str; 12] = [
     "1x2 W80 S99 N7 S84 E5 S97 E82 N5 E99 S5 E0 N4",
 ];
 const EXPECTED_MISSION_DIGEST: &str = "2721281322b62b2b";
+const EXPECTED_SPELLINGS: [&str; 8] = [
+    "lf/eol/pre1/runsst,ts,s,s/lead4/trail4/zeros1/sep2/emptyblank",
+    "crlf/eol/pre2/runsst,t,t,st/lead3/trail3/zeros1/sep1/wsblank",
+    "lf/no-eol/pre2/runsst,st,t,t/lead3/trail1/zeros2/sep2/emptyblank",
+    "lf/eol/pre1/runsst,ss,tt,s/lead3/trail4/zeros2/sep2/emptyblank",
+    "lf/eol/pre2/runss,t,t,ts/lead2/trail4/zeros3/sep2/emptyblank",
+    "lf/no-eol/pre2/runsst,st,ts,tt/lead3/trail2/zeros1/sep2/wsblank",
+    "crlf/eol/pre2/runsts,ss,ts,ts/lead4/trail4/zeros3/sep1/wsblank",
+    "crlf/eol/pre0/runsst,s,t,ts/lead4/trail4/zeros3/sep1/emptyblank",
+];
 const EXPECTED_SPELLING_DIGEST: &str = "d1c614aec33820a9";
 const EXPECTED_MUTATIONS: [&str; 10] = [
     "a position line with no orientation",

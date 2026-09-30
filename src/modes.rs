@@ -108,6 +108,14 @@ pub struct PropertyRun {
     pub missions: u32,
 }
 
+/// Every predicate the properties mode reports on, in the order it reports
+/// them. Exposed so a documentation test can check the README lists all of
+/// them: two of these live here rather than in `properties`, and watching only
+/// that module left them free to be renamed out from under the README.
+pub fn predicate_names() -> Vec<&'static str> {
+    properties::NAMES.iter().copied().chain(CROSS_RUN).collect()
+}
+
 const CROSS_RUN: [&str; 2] = [
     "the same input twice gives the same answer",
     "appending a robot does not change the robots before it",
@@ -120,7 +128,7 @@ pub fn properties(
     budget: &Budget,
 ) -> Result<PropertyRun, String> {
     let mut rng = Rng::from_seed(budget.seed ^ 0x5072_6F70);
-    let names: Vec<&'static str> = properties::NAMES.iter().copied().chain(CROSS_RUN).collect();
+    let names = predicate_names();
     let mut fired = vec![0; names.len()];
     let mut violations = Vec::new();
 

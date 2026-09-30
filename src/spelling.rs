@@ -59,6 +59,40 @@ pub struct Spelling {
 }
 
 impl Spelling {
+    /// Every dimension of one spelling, short enough to read in a diff.
+    ///
+    /// The corpus test pins these beside a digest. A digest alone catches any
+    /// change and explains none of them, which loses the property that file
+    /// exists for: that replacing the meaning of a seed is something somebody
+    /// reviewed rather than something that happened.
+    pub fn describe(&self) -> String {
+        let runs = self
+            .runs
+            .iter()
+            .map(|run| {
+                run.chars()
+                    .map(|character| if character == '\t' { 't' } else { 's' })
+                    .collect::<String>()
+            })
+            .collect::<Vec<String>>()
+            .join(",");
+        format!(
+            "{}/{}/pre{}/runs{runs}/lead{}/trail{}/zeros{}/sep{}/{}",
+            if self.ending == "\r\n" { "crlf" } else { "lf" },
+            if self.omit_final_eol { "no-eol" } else { "eol" },
+            self.blanks_before_grid,
+            self.leading.iter().filter(|pad| !pad.is_empty()).count(),
+            self.trailing.iter().filter(|pad| !pad.is_empty()).count(),
+            self.zeros.iter().filter(|width| **width > 0).count(),
+            self.blanks_after_block.iter().copied().max().unwrap_or(0),
+            if self.blank_is_whitespace {
+                "wsblank"
+            } else {
+                "emptyblank"
+            }
+        )
+    }
+
     /// The spelling with nothing optional in it. A test fixture: the mode
     /// itself uses `Mission::canonical`, and the two are asserted equal.
     #[cfg(test)]
@@ -309,5 +343,78 @@ mod tests {
         assert!(permitted(b"5 3\n1 1 E\nRF\n   ").is_err(), "Q4's shape");
         assert!(permitted(b"5 3\n1 1 E\nRF").is_ok());
         assert!(permitted(b"5 3\r\n1 1 E\r\nRF\r\n").is_ok());
+    }
+
+    #[test]
+    fn every_framing_dimension_is_still_drawn_in_both_states() {
+        // A dimension that quietly stopped being generated leaves this mode
+        // reporting the same coverage it always did. The mutation generator has
+        // `every_kind_of_mutation_gets_built` for exactly this; nothing here
+        // did until now, and the round-trip tests would not notice, because a
+        // spelling that varies less still round-trips.
+        let contract = Contract::load().unwrap();
+        let mut rng = Rng::from_seed(59);
+        let mut crlf = false;
+        let mut lf = false;
+        let mut omitted = false;
+        let mut terminated = false;
+        let mut blanks_before = false;
+        let mut none_before = false;
+        let mut a_tab = false;
+        let mut a_run = false;
+        let mut padded = false;
+        let mut unpadded = false;
+        let mut zeros = false;
+        let mut plain_numbers = false;
+        let mut blanks_between = false;
+        let mut whitespace_blank = false;
+        let mut empty_blank = false;
+
+        for _ in 0..400 {
+            let spelling = Spelling::draw(&mut rng, &contract.grammar);
+            crlf |= spelling.ending == "\r\n";
+            lf |= spelling.ending == "\n";
+            omitted |= spelling.omit_final_eol;
+            terminated |= !spelling.omit_final_eol;
+            blanks_before |= spelling.blanks_before_grid > 0;
+            none_before |= spelling.blanks_before_grid == 0;
+            a_tab |= spelling.runs.iter().any(|run| run.contains('\t'));
+            a_run |= spelling.runs.iter().any(|run| run.chars().count() > 1);
+            padded |= spelling
+                .leading
+                .iter()
+                .chain(&spelling.trailing)
+                .any(|pad| !pad.is_empty());
+            unpadded |= spelling
+                .leading
+                .iter()
+                .chain(&spelling.trailing)
+                .any(String::is_empty);
+            zeros |= spelling.zeros.iter().any(|width| *width > 0);
+            plain_numbers |= spelling.zeros.contains(&0);
+            blanks_between |= spelling.blanks_after_block.iter().any(|blanks| *blanks > 0);
+            whitespace_blank |= spelling.blank_is_whitespace;
+            empty_blank |= !spelling.blank_is_whitespace;
+        }
+
+        for (drawn, dimension) in [
+            (crlf, "a CRLF ending"),
+            (lf, "an LF ending"),
+            (omitted, "an unterminated final line"),
+            (terminated, "a terminated final line"),
+            (blanks_before, "blank lines before the grid line"),
+            (none_before, "no blank lines before the grid line"),
+            (a_tab, "a tab as a separator"),
+            (a_run, "a run of more than one separator"),
+            (padded, "whitespace at the edge of a line"),
+            (unpadded, "a line with no edge whitespace"),
+            (zeros, "a leading zero"),
+            (plain_numbers, "a number written plainly"),
+            (blanks_between, "blank lines between robot blocks"),
+            (whitespace_blank, "a blank line made of whitespace"),
+            (empty_blank, "a blank line made of nothing"),
+        ] {
+            assert!(drawn, "the generator no longer draws {dimension}");
+        }
     }
 }

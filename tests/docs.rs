@@ -64,7 +64,13 @@ fn every_predicate_the_readme_lists_is_a_predicate() {
     // The invariants are quoted by name, and a renamed one would leave the
     // README describing a check the suite no longer makes.
     let readme = readme();
-    for name in martian_robots_verify::properties::NAMES {
+    let names = martian_robots_verify::modes::predicate_names();
+    assert!(
+        names.len() >= 8,
+        "only {} predicate(s) to watch",
+        names.len()
+    );
+    for name in names {
         assert!(
             readme.contains(name),
             "the README does not list the invariant {name:?}"
