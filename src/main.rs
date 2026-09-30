@@ -19,6 +19,10 @@ Usage: martian-robots-verify --bin <path> [--quiet]
                  written from the same contract (default 60)
   --seed <n>     the seed the generated missions come from, so a failure
                  replays; a run without one picks and prints its own
+  --case <id>    run only the cases whose id starts with this, and none of
+                 the generated modes. A group name on its own selects the
+                 group: `--case scent` is every scent case
+  --cases        list every case id and exit
   --contract     write the contract to stdout, as one document
   -h, --help     print this message and exit
 
@@ -36,8 +40,12 @@ enum Task {
         implementation: PathBuf,
         quiet: bool,
         budget: modes::Budget,
+        /// Run only the cases whose id starts with this, and no generated
+        /// mode. A failure names an id, and this is how the id is used.
+        only: Option<String>,
     },
     Show,
+    List,
     Help,
 }
 
@@ -51,11 +59,13 @@ impl Task {
         let mut breakages = 40;
         let mut against_reference = 60;
         let mut seed = None;
+        let mut only = None;
 
         while let Some(argument) = args.next() {
             match argument.as_str() {
                 "-h" | "--help" => return Ok(Self::Help),
                 "--contract" => return Ok(Self::Show),
+                "--cases" => return Ok(Self::List),
                 "--quiet" => quiet = true,
                 "--bin" => {
                     let path = args.next().ok_or("--bin needs a path")?;
@@ -66,8 +76,19 @@ impl Task {
                 "--rejections" => breakages = number(args.next(), "--rejections")?,
                 "--differential" => against_reference = number(args.next(), "--differential")?,
                 "--seed" => seed = Some(number(args.next(), "--seed")?),
+                "--case" => only = Some(args.next().ok_or("--case needs an id")?),
                 other => return Err(format!("unknown argument: {other}")),
             }
+        }
+
+        // Asking for one case and getting sixty generated missions as well
+        // would make the flag useless for the thing it is for: running the
+        // case a failure just named.
+        if only.is_some() {
+            missions = 0;
+            checks = 0;
+            breakages = 0;
+            against_reference = 0;
         }
 
         Ok(Self::Grade {
@@ -82,6 +103,7 @@ impl Task {
                     .map_err(|_| "--differential is too large")?,
                 seed: seed.unwrap_or_else(rng::Rng::seed_from_the_clock),
             },
+            only,
         })
     }
 }
@@ -102,6 +124,12 @@ fn main() -> ExitCode {
             print!("{USAGE}");
             ExitCode::SUCCESS
         }
+        Task::List => {
+            for case in cases::catalogue(&contract) {
+                println!("{}", case.id);
+            }
+            ExitCode::SUCCESS
+        }
         Task::Show => match contract.render() {
             Ok(document) => {
                 print!("{document}");
@@ -113,7 +141,8 @@ fn main() -> ExitCode {
             implementation,
             quiet,
             budget,
-        } => grade(&contract, &implementation, quiet, &budget),
+            only,
+        } => grade(&contract, &implementation, quiet, &budget, only.as_deref()),
     }
 }
 
@@ -135,6 +164,7 @@ fn grade(
     implementation: &Path,
     quiet: bool,
     budget: &modes::Budget,
+    only: Option<&str>,
 ) -> ExitCode {
     if !implementation.is_file() {
         return fail(&format!(
@@ -143,8 +173,17 @@ fn grade(
         ));
     }
 
-    match catalogue(contract, implementation, quiet) {
+    match catalogue(contract, implementation, quiet, only) {
         Err(message) => fail(&message),
+        // A selected run is asking about named cases, so the generated modes
+        // are not run and their empty summaries are not printed.
+        Ok(failed) if only.is_some() => {
+            if failed == 0 {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }
         Ok(failed) => match generated(contract, implementation, quiet, budget) {
             Err(message) => fail(&message),
             Ok(complaints) => {
@@ -159,8 +198,27 @@ fn grade(
 }
 
 /// The cases, and how much of the contract they reach.
-fn catalogue(contract: &Contract, implementation: &Path, quiet: bool) -> Result<usize, String> {
-    let catalogue = cases::catalogue(contract);
+fn catalogue(
+    contract: &Contract,
+    implementation: &Path,
+    quiet: bool,
+    only: Option<&str>,
+) -> Result<usize, String> {
+    let everything = cases::catalogue(contract);
+    let catalogue: Vec<&cases::Case> = everything
+        .iter()
+        .filter(|case| only.is_none_or(|prefix| case.id.starts_with(prefix)))
+        .collect();
+
+    // A filter that matches nothing must not report a clean run. This is the
+    // shape of every silently-empty test suite there has ever been.
+    if let Some(prefix) = only
+        && catalogue.is_empty()
+    {
+        return Err(format!(
+            "no case id starts with {prefix:?}; --cases lists them"
+        ));
+    }
     let mut failed = 0;
 
     for case in &catalogue {
@@ -175,6 +233,7 @@ fn catalogue(contract: &Contract, implementation: &Path, quiet: bool) -> Result<
                 failed += 1;
                 println!("FAIL {}", case.name);
                 println!("      {why}");
+                println!("      case: {} (--case {})", case.id, case.id);
                 if !case.stdin.is_empty() {
                     println!("      stdin: {}", show(&case.stdin));
                 }
@@ -187,7 +246,7 @@ fn catalogue(contract: &Contract, implementation: &Path, quiet: bool) -> Result<
         }
     }
 
-    if !quiet {
+    if !quiet && only.is_none() {
         let enforced = contract
             .ruled()
             .filter(|ruling| {

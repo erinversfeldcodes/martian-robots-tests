@@ -5,6 +5,16 @@ use crate::contract::{Contract, SAMPLE_INPUT, SAMPLE_OUTPUT};
 use crate::expect::{Diagnostic, Expect, MORE_THAN_A_PIPE_HOLDS};
 
 pub struct Case {
+    /// `group/slug`, derived from where the case lives and what it is called.
+    ///
+    /// A citation needs something shorter than a sentence and more stable than
+    /// a position in a list. A number would be neither: inserting a case
+    /// renumbers its neighbours, and nothing about `C17` says what broke. The
+    /// group makes a whole area selectable in one word, and deriving the rest
+    /// from the name means an id cannot drift away from the case it names -
+    /// renaming a case is a change to what it claims, and the id changing with
+    /// it is correct.
+    pub id: String,
     pub name: String,
     pub enforces: Vec<String>,
     pub note: String,
@@ -15,6 +25,24 @@ pub struct Case {
 
 struct Builder {
     cases: Vec<Case>,
+    /// The group the cases being built belong to, set by `catalogue` before
+    /// each group runs so no group function has to name itself twice.
+    group: &'static str,
+}
+
+/// A name as an id fragment: lowercase words joined by hyphens, and nothing
+/// else. Two names that differ only in punctuation would collide, which a test
+/// in this module refuses.
+fn slug(name: &str) -> String {
+    let mut slug = String::with_capacity(name.len());
+    for character in name.chars() {
+        if character.is_ascii_alphanumeric() {
+            slug.push(character.to_ascii_lowercase());
+        } else if !slug.ends_with('-') {
+            slug.push('-');
+        }
+    }
+    slug.trim_matches('-').to_string()
 }
 
 impl Builder {
@@ -27,6 +55,7 @@ impl Builder {
         expect: Expect,
     ) {
         self.cases.push(Case {
+            id: format!("{}/{}", self.group, slug(name)),
             name: name.to_string(),
             enforces: enforces.iter().map(ToString::to_string).collect(),
             note: note.to_string(),
@@ -45,6 +74,7 @@ impl Builder {
         expect: Expect,
     ) {
         self.cases.push(Case {
+            id: format!("{}/{}", self.group, slug(name)),
             name: name.to_string(),
             enforces: enforces.iter().map(ToString::to_string).collect(),
             note: note.to_string(),
@@ -64,6 +94,7 @@ impl Builder {
         expect: Expect,
     ) {
         self.cases.push(Case {
+            id: format!("{}/{}", self.group, slug(name)),
             name: name.to_string(),
             enforces: enforces.iter().map(ToString::to_string).collect(),
             note: note.to_string(),
@@ -75,16 +106,29 @@ impl Builder {
 }
 
 pub fn catalogue(contract: &Contract) -> Vec<Case> {
-    let mut build = Builder { cases: Vec::new() };
+    let mut build = Builder {
+        cases: Vec::new(),
+        group: "",
+    };
+    build.group = "missions";
     missions(&mut build, contract);
+    build.group = "scent";
     scent(&mut build);
+    build.group = "whitespace";
     whitespace(&mut build);
+    build.group = "vocabulary";
     vocabulary(&mut build);
+    build.group = "framing";
     framing(&mut build);
+    build.group = "diagnostics";
     diagnostics(&mut build, contract);
+    build.group = "bytes";
     bytes(&mut build);
+    build.group = "boundaries";
     boundaries(&mut build, contract);
+    build.group = "invocation";
     invocation(&mut build, contract);
+    build.group = "boundary";
     boundary(&mut build, contract);
     build.cases
 }
@@ -580,6 +624,11 @@ fn boundary(build: &mut Builder, contract: &Contract) {
     );
 
     build.cases.push(Case {
+        id: format!(
+            "{}/{}",
+            build.group,
+            slug("an argument that is not text is a usage error")
+        ),
         name: "an argument that is not text is a usage error".to_string(),
         enforces: vec!["R21".to_string()],
         note: "R22 governs input that is not text; an argument is not input, \
@@ -612,9 +661,50 @@ fn after_left_turns(turns: u32) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{after_left_turns, catalogue};
+    use super::{after_left_turns, catalogue, slug};
     use crate::contract::{Contract, Decision};
     use crate::expect::{Expect, MORE_THAN_A_PIPE_HOLDS};
+
+    #[test]
+    fn every_case_has_an_id_nothing_else_has() {
+        // An id is how a failure is cited and re-run. Two cases sharing one
+        // would make `--case` run the wrong thing, and a name that slugs to an
+        // empty string would make it run everything.
+        let contract = Contract::load().unwrap();
+        let mut seen: Vec<String> = Vec::new();
+        for case in catalogue(&contract) {
+            assert!(
+                case.id.split('/').count() == 2 && !case.id.ends_with('/'),
+                "{:?} is not group/slug",
+                case.id
+            );
+            assert!(
+                case.id
+                    .chars()
+                    .all(|character| character.is_ascii_lowercase()
+                        || character.is_ascii_digit()
+                        || character == '-'
+                        || character == '/'),
+                "{:?} is not safe to type or grep for",
+                case.id
+            );
+            assert!(!seen.contains(&case.id), "two cases share {:?}", case.id);
+            seen.push(case.id);
+        }
+    }
+
+    #[test]
+    fn a_slug_survives_the_punctuation_a_name_can_carry() {
+        assert_eq!(
+            slug("the brief's sample, byte for byte"),
+            "the-brief-s-sample-byte-for-byte"
+        );
+        assert_eq!(
+            slug("--help alone prints usage and exits 0"),
+            "help-alone-prints-usage-and-exits-0"
+        );
+        assert_eq!(slug("  spaced  out  "), "spaced-out");
+    }
 
     #[test]
     fn every_cited_ruling_exists_and_is_ruled() {

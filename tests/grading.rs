@@ -923,3 +923,94 @@ fn a_disagreement_is_reported_small_enough_to_read() {
          {reduced}"
     );
 }
+
+#[test]
+fn a_failure_names_an_id_that_runs_it_again() {
+    let fixtures = Fixtures::new("selection");
+    // Wrong about one thing: a scent that only protects a departure by the
+    // edge the earlier robot left through.
+    let implementation = fixtures.implementation(
+        "direction-scent",
+        &format!(
+            "MISBEHAVE=direction-scent exec {}",
+            Path::new(env!("CARGO_BIN_EXE_misbehave")).display()
+        ),
+    );
+
+    let report = grade(&implementation);
+    let cited = report
+        .stdout
+        .lines()
+        .find_map(|line| line.trim_start().strip_prefix("case: "))
+        .expect("a failure to cite a case id")
+        .to_string();
+    let (id, _) = cited.split_once(' ').expect("the id and how to run it");
+
+    // The citation, used. This is the only claim an id has to make.
+    let again = grade_with(&implementation, &["--case", id]);
+    assert!(
+        !again.conformed,
+        "the case the id names must fail on its own:\n{}",
+        again.stdout
+    );
+    assert_eq!(
+        again
+            .stdout
+            .lines()
+            .filter(|line| line.starts_with("FAIL"))
+            .count(),
+        1,
+        "one id, one case:\n{}",
+        again.stdout
+    );
+
+    // A group name selects the group and nothing else. The brief's own sample
+    // is in this one, and R9's rationale records that it cannot tell the two
+    // scent models apart - so a group that does not ask about corners passes a
+    // program that is wrong about them.
+    let group = grade_with(&implementation, &["--case", "missions"]);
+    assert!(
+        group.conformed,
+        "nothing in the missions group distinguishes the scent models:\n{}",
+        group.stdout
+    );
+    assert_eq!(
+        group
+            .stdout
+            .lines()
+            .filter(|line| line.starts_with("ok"))
+            .count(),
+        4,
+        "a group name must select its group and not the catalogue:\n{}",
+        group.stdout
+    );
+}
+
+#[test]
+fn a_selection_that_matches_nothing_is_an_error_and_not_a_clean_run() {
+    let fixtures = Fixtures::new("selection-typo");
+    let implementation = fixtures.implementation(
+        "conforming",
+        &format!(
+            "exec {} \"$@\"",
+            Path::new(env!("CARGO_BIN_EXE_probe")).display()
+        ),
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_martian-robots-verify"))
+        .arg("--bin")
+        .arg(&implementation)
+        .args(["--case", "scents"])
+        .output()
+        .expect("to run the suite");
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "a mistyped id must be the suite failing to run, not the program passing"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("no case id starts with"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
