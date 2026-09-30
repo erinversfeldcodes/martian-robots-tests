@@ -123,9 +123,25 @@ pub fn properties(
     let mut fired = vec![0; names.len()];
     let mut violations = Vec::new();
 
-    for _ in 0..budget.properties {
+    for round in 0..budget.properties {
         let mission = Mission::draw_shaped(&mut rng, contract);
-        let input = mission.canonical();
+
+        // Half of them arrive respelled. A mission is the same mission however
+        // its whitespace and line endings are written, so every predicate
+        // holds over a respelling as it does over the canonical form.
+        //
+        // The spelling mode already compares a respelling against the
+        // program's own canonical answer, and it would see most readers that
+        // mishandle a tab. What it does not do is ask the two cross-run
+        // questions of a respelled input: whether an unusual spelling is
+        // answered the same way twice, and whether appending a robot written
+        // that way disturbs the robots before it. Those are where a reader
+        // that keeps state across a parse, or scans further than it should,
+        // shows up. The rest is a wider respelled corpus, which is worth
+        // having for its own sake.
+        let spelling = (round % 2 == 1).then(|| Spelling::draw(&mut rng, &contract.grammar));
+        let input = write(&mission, spelling.as_ref())?;
+
         let Some(said) = answer(implementation, &input)? else {
             violations.push(format!(
                 "a valid mission was refused, so nothing can be said about it\n      on {}",
@@ -169,6 +185,7 @@ pub fn properties(
             continue;
         }
         let longer = mission.with_another_robot(&mut rng, contract);
+        let longer_input = write(&longer, spelling.as_ref())?;
         if !longer.every_robot_starts_on_the_grid() {
             return Err(format!(
                 "the generator built an invalid mission: {}",
@@ -177,7 +194,7 @@ pub fn properties(
         }
         {
             fired[at + 1] += 1;
-            let extended = answer(implementation, &longer.canonical())?.unwrap_or_default();
+            let extended = answer(implementation, &longer_input)?.unwrap_or_default();
             let before = said.split_inclusive(|&byte| byte == b'\n').count();
             let kept: Vec<u8> = extended
                 .split_inclusive(|&byte| byte == b'\n')
@@ -191,7 +208,7 @@ pub fn properties(
                     names[at + 1],
                     show(&said),
                     show(&kept),
-                    show(&longer.canonical())
+                    show(&longer_input)
                 ));
             }
         }
@@ -203,6 +220,26 @@ pub fn properties(
         violations,
         missions: budget.properties,
     })
+}
+
+/// A mission as bytes, canonically or in the spelling given, with the
+/// generator checking its own work either way: a rendering that broke the
+/// grammar would turn an invariant into a rejection test, and one that changed
+/// the mission would blame a program for the generator's mistake.
+fn write(mission: &Mission, spelling: Option<&Spelling>) -> Result<Vec<u8>, String> {
+    let Some(spelling) = spelling else {
+        return Ok(mission.canonical());
+    };
+    let rendered = spelling::render(mission, spelling);
+    spelling::permitted(&rendered)
+        .map_err(|why| format!("the generator emitted {why}: {}", show(&rendered)))?;
+    if Mission::read_back(&rendered).as_ref() != Ok(mission) {
+        return Err(format!(
+            "the generator changed the mission it was rendering: {}",
+            show(&rendered)
+        ));
+    }
+    Ok(rendered)
 }
 
 pub struct RejectionRun {

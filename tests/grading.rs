@@ -755,3 +755,55 @@ fn every_semantic_case_is_failed_by_some_wrong_program() {
         );
     }
 }
+
+#[test]
+fn the_invariants_are_asked_of_respelled_input_as_well_as_canonical() {
+    let fixtures = Fixtures::new("respelled-properties");
+    // A class that never runs and a class that finds nothing print the same
+    // thing, and a respelling that never gets drawn is exactly that. So this
+    // one keeps what it was fed: the conforming program behind a tee.
+    let seen = fixtures.directory.join("fed");
+    let implementation = fixtures.implementation(
+        "recorder",
+        &format!(
+            "tee -a {} | {}",
+            seen.display(),
+            Path::new(env!("CARGO_BIN_EXE_probe")).display()
+        ),
+    );
+
+    let report = grade_with(
+        &implementation,
+        &[
+            "--spelling",
+            "0",
+            "--rejections",
+            "0",
+            "--differential",
+            "0",
+            "--properties",
+            "20",
+            "--seed",
+            "17",
+        ],
+    );
+    // Only this mode's verdict is the subject. The wrapper forwards no
+    // arguments and drains stdin to record it, so the flag cases have nothing
+    // to say here.
+    assert!(
+        report
+            .stdout
+            .lines()
+            .any(|line| line.starts_with("properties:") && line.ends_with("0 violation(s)")),
+        "the conforming program must satisfy every invariant over a \
+         respelling:\n{}",
+        report.stdout
+    );
+
+    let fed = fs::read(&seen).expect("the fixture to have recorded what it was fed");
+    assert!(
+        fed.contains(&b'\t') || fed.windows(2).any(|pair| pair == b"\r\n"),
+        "every input the properties mode drew was canonical, so the respelled \
+         half of this mode is not running"
+    );
+}
