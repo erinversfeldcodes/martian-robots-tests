@@ -670,3 +670,88 @@ fn an_implementation_that_reads_stdin_before_its_arguments_is_caught() {
         );
     }
 }
+
+/// Which misreading of §2.2 each semantic case catches.
+///
+/// Every scent case in the catalogue claims to discriminate, and until
+/// something fails it the claim is only an argument. The near-miss gallery
+/// supplies a program per plausible misreading; this table says which cases
+/// each one fails, and the assertions below run both ways. A case missing from
+/// every row is a case no wrong program is known to fail. A defect that fails
+/// a row it is not listed on is a case pinning more than it claims.
+const NEAR_MISSES: [(&str, &[&str]); 6] = [
+    (
+        "direction-scent",
+        &["a scent blocks a departure by a different edge"],
+    ),
+    (
+        "scent-consumed",
+        &["a scent is not used up by the robot it saves"],
+    ),
+    (
+        "scent-at-start",
+        &[
+            "a scent marks the cell and never the robot",
+            "a scent protects a robot that walked onto the cell",
+        ],
+    ),
+    ("stop-on-ignore", &["an ignored move does not end the run"]),
+    (
+        "one-scent",
+        &["scents on different cells each protect their own"],
+    ),
+    (
+        "keep-simulating",
+        &["a lost robot does not run the rest of its instructions"],
+    ),
+];
+
+const SCENT_CASES: [&str; 7] = [
+    "a scent blocks a departure by a different edge",
+    "a scent is not used up by the robot it saves",
+    "a scent marks the cell and never the robot",
+    "an ignored move does not end the run",
+    "scents on different cells each protect their own",
+    "a scent protects a robot that walked onto the cell",
+    "a lost robot does not run the rest of its instructions",
+];
+
+#[test]
+fn every_misreading_of_the_scent_rule_fails_exactly_the_cases_it_should() {
+    let fixtures = Fixtures::new("near-misses");
+    let gallery = Path::new(env!("CARGO_BIN_EXE_misbehave"))
+        .display()
+        .to_string();
+
+    for (defect, should_fail) in NEAR_MISSES {
+        let implementation =
+            fixtures.implementation(defect, &format!("MISBEHAVE={defect} exec {gallery}"));
+        let report = grade(&implementation);
+        for case in SCENT_CASES {
+            let failed = report.failure(case).is_some();
+            assert_eq!(
+                failed,
+                should_fail.contains(&case),
+                "{defect}: {case:?} {}\n{}",
+                if failed {
+                    "failed and should not"
+                } else {
+                    "passed and should not"
+                },
+                report.stdout
+            );
+        }
+    }
+}
+
+#[test]
+fn every_semantic_case_is_failed_by_some_wrong_program() {
+    // A case nothing fails is a case that has never been shown to do anything.
+    for case in SCENT_CASES {
+        assert!(
+            NEAR_MISSES.iter().any(|(_, cases)| cases.contains(&case)),
+            "no near miss in the gallery fails {case:?}, so nothing shows it \
+             discriminates"
+        );
+    }
+}

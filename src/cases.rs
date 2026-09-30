@@ -119,6 +119,50 @@ fn scent(build: &mut Builder) {
         "2 0\n0 0 W\nF\n0 0 E\nFFF\n",
         Expect::Output(b"0 0 W LOST\n2 0 E LOST\n".to_vec()),
     );
+
+    build.case(
+        "an ignored move does not end the run",
+        &["R9"],
+        "R9 says the move is ignored, not that the robot stops. Robot two \
+         survives the scented edge, turns, and walks inland; an \
+         implementation that breaks out of the instruction loop instead \
+         reports it still facing north where it started, and passes every \
+         other scent case here",
+        "2 1\n2 1 N\nF\n2 1 N\nFLF\n",
+        Expect::Output(b"2 1 N LOST\n1 1 W\n".to_vec()),
+    );
+
+    build.case(
+        "scents on different cells each protect their own",
+        &["R9"],
+        "two losses on opposite corners, then two robots repeating them. A \
+         scent held as one cell, or as a flag rather than a set, protects the \
+         wrong robot or both",
+        "1 1\n0 0 S\nF\n1 1 N\nF\n0 0 S\nF\n1 1 N\nF\n",
+        Expect::Output(b"0 0 S LOST\n1 1 N LOST\n0 0 S\n1 1 N\n".to_vec()),
+    );
+
+    build.case(
+        "a scent protects a robot that walked onto the cell",
+        &["R23"],
+        "R23's rationale makes protection a matter of occupancy and not of \
+         provenance. Robot two arrives at the scented cell after two moves of \
+         its own and is saved there; an implementation that checks the scent \
+         once, against where a robot started, loses it",
+        "2 0\n0 0 W\nF\n2 0 W\nFFF\n",
+        Expect::Output(b"0 0 W LOST\n0 0 W\n".to_vec()),
+    );
+
+    build.case(
+        "a lost robot does not run the rest of its instructions",
+        &[],
+        "no ruling was needed: §2.2 removes a lost robot from the grid, and \
+         what is off the grid has nothing left to do. Pinned anyway because \
+         the instructions after the fatal move turn, so an implementation \
+         that keeps simulating reports the same loss facing east",
+        "1 1\n1 1 N\nFRF\n",
+        Expect::Output(b"1 1 N LOST\n".to_vec()),
+    );
 }
 
 fn whitespace(build: &mut Builder) {
