@@ -140,6 +140,13 @@ instruction shapes on purpose — a uniformly random instruction string is
 all-`F` about once in 3^n, so without the bias the strongest predicates would
 almost never fire. `--properties <n>` sets the corpus size.
 
+Every invariant is also asked of the reference implementation itself over a
+drawn corpus, not only of a candidate. The differential mode's verdict and the
+shrinker's predicate both rest on that implementation being right, and the hand
+examples behind it are thin for that load — a scent recorded one cell ahead of
+where the robot stood passes all of them and violates an invariant on the
+second draw.
+
 Half the corpus arrives respelled rather than canonical. A mission is the same
 mission however its whitespace is written, so every predicate holds over a
 respelling too, and two of them are questions the spelling mode never asks of
@@ -154,13 +161,33 @@ enough to disagree about.
 
 ## Generated rejections
 
-The last mode breaks valid missions on purpose, one way at a time: a
+The last mode breaks valid missions on purpose, usually one way at a time: a
 coordinate past a limit, a start off the world, a letter outside a vocabulary,
-a token too many or too few, a line removed or inserted, and a character the
+a token too many or too few, a line removed or inserted, bytes that are not
+text, two independent problems on two robots, and a character the
 grammar does not admit as whitespace — that last one across every line type and
 every position a space would have been legal, including hidden inside an
 otherwise-legal run of spaces, which is where a reader that trims and splits
 blames the innocent space beside the offender.
+
+Two of those families are stated as principles rather than lists, because a
+list is a thing somebody has to remember to extend and a hand-picked one leaves
+exactly the characters nobody thought of. The injected whitespace is everything
+Unicode calls whitespace — which is what `char::is_whitespace` reports — plus
+the ASCII information separators and the byte-order mark, minus whatever the
+grammar admits; a reader that folded only the eight characters an earlier
+hand-picked pool held passed every gate in this suite. The malformed bytes come
+from a taxonomy of how decoders fail: overlong encodings, UTF-16 surrogates,
+code points past the last one, truncations at each length, and bytes a Latin-1
+decoder reads as letters. The overlong encoding is the one that matters — a
+decoder that reads `C0 A0` as a space turns input the contract refuses into a
+mission it answers, and the answer looks entirely reasonable.
+
+R25 asks for every violation found in one pass, so one family breaks two robots
+at once with two different rulings governing, and a diagnostic is held to a tag
+per violation rather than one shared between them. Collecting every error in one
+pass is the hardest thing in a parser: a program that is otherwise perfect and
+reports only its first problem passes every single-defect case in the suite.
 
 ```
 rejections: <n> of <n> attempted, seed <n>, <n> failure(s)
@@ -243,6 +270,10 @@ it by its own tests. Every other fixture is wrong on purpose and proves a check
 can go red; this one is right on purpose and proves the checks are not red for
 a program that has done nothing wrong.
 
+`--timeout <s>` sets how long one run may take. Q3 leaves a hang to grader
+policy, which is why it is policy on a flag rather than a constant in the
+source: a loaded runner should not read as a conformance failure.
+
 It is deliberately eccentric everywhere the contract is silent — it exits 7
 rather than 1, writes its diagnostics with the ruling first and the line last,
 never says the word "usage", and reports its version in a sentence. A case that
@@ -256,8 +287,15 @@ third simulator would be a third chance to be wrong about the same section.
 `src/bin/misbehave.rs` is the other half of that argument: a gallery of programs
 wrong in exactly one way about the scent rule — a scent that remembers a
 heading, one spent on the robot it saves, one looked up only where a robot was
-placed, a blocked move that ends the run, a lost robot that keeps going. The
-tests assert which cases each one fails, both ways round. A case no wrong
+placed, a blocked move that ends the run, a lost robot that keeps going, a world with
+an upper edge and no lower one — plus readers wrong about bytes rather than
+about scent. The tests assert which cases each one fails, both ways round, and
+the case list is read out of the catalogue rather than written down, so a new
+case in a covered group fails the tests until something is shown to fail it.
+That obligation earns its keep: it fired on the first case added after it, and
+the misreading it demanded turned out to fail three older cases too — three
+scent cases that placed a robot on an edge at zero, none of which was testing
+quite what it looked like. A case no wrong
 program fails has never been shown to do anything, and a case that fails a
 program it was not written for is pinning more than it claims.
 

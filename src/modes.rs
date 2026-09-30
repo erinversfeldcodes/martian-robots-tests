@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::time::Duration;
 
 use crate::contract::Contract;
 use crate::expect::{Diagnostic, Expect, show};
@@ -7,11 +8,13 @@ use crate::mutation;
 use crate::properties;
 use crate::reference;
 use crate::rng::Rng;
-use crate::run::{TIMEOUT, observe};
+use crate::run::observe;
 use crate::shrink;
 use crate::spelling::{self, Spelling};
 
 pub struct Budget {
+    /// Grader policy under Q3, so it is a flag rather than a constant.
+    pub timeout: Duration,
     pub missions: u32,
     pub spellings: u32,
     pub properties: u32,
@@ -51,7 +54,7 @@ pub fn spelling_differential(
     for _ in 0..budget.missions {
         let mission = Mission::draw(&mut rng, contract);
         let canonical = mission.canonical();
-        let Some(expected) = answer(implementation, &canonical)? else {
+        let Some(expected) = answer(implementation, &canonical, budget.timeout)? else {
             refused.push(canonical);
             continue;
         };
@@ -74,7 +77,7 @@ pub fn spelling_differential(
             }
 
             compared += 1;
-            let got = answer(implementation, &rendered)?
+            let got = answer(implementation, &rendered, budget.timeout)?
                 .unwrap_or_else(|| b"<refused a spelling of a mission it answered>".to_vec());
             if got != expected {
                 divergences.push(Divergence {
@@ -102,8 +105,12 @@ pub fn spelling_differential(
 /// that refused *everything* agreed with itself perfectly and the spelling
 /// mode reported no divergences. Refusals are now visible to each caller,
 /// which decides what they mean.
-fn answer(implementation: &Path, input: &[u8]) -> Result<Option<Vec<u8>>, String> {
-    let seen = observe(implementation, &[], input, TIMEOUT)?;
+fn answer(
+    implementation: &Path,
+    input: &[u8],
+    timeout: Duration,
+) -> Result<Option<Vec<u8>>, String> {
+    let seen = observe(implementation, &[], input, timeout)?;
     Ok(seen.exited_zero().then_some(seen.stdout))
 }
 
@@ -157,7 +164,7 @@ pub fn properties(
         let spelling = (round % 2 == 1).then(|| Spelling::draw(&mut rng, &contract.grammar));
         let input = write(&mission, spelling.as_ref(), contract)?;
 
-        let Some(said) = answer(implementation, &input)? else {
+        let Some(said) = answer(implementation, &input, budget.timeout)? else {
             violations.push(format!(
                 "a valid mission was refused, so nothing can be said about it\n      on {}",
                 show(&input)
@@ -181,7 +188,7 @@ pub fn properties(
         }
 
         let at = properties::NAMES.len();
-        let again = answer(implementation, &input)?.unwrap_or_default();
+        let again = answer(implementation, &input, budget.timeout)?.unwrap_or_default();
         fired[at] += 1;
         if again != said {
             violations.push(format!(
@@ -209,7 +216,8 @@ pub fn properties(
         }
         {
             fired[at + 1] += 1;
-            let extended = answer(implementation, &longer_input)?.unwrap_or_default();
+            let extended =
+                answer(implementation, &longer_input, budget.timeout)?.unwrap_or_default();
             let before = said.split_inclusive(|&byte| byte == b'\n').count();
             let kept: Vec<u8> = extended
                 .split_inclusive(|&byte| byte == b'\n')
@@ -293,7 +301,7 @@ pub fn rejections(
                 Diagnostic::at_lines(&demands)
             }
         });
-        let seen = observe(implementation, &[], &mutation.rendered, TIMEOUT)?;
+        let seen = observe(implementation, &[], &mutation.rendered, budget.timeout)?;
         if let Some(why) = expect.judge(&seen) {
             failures.push(format!(
                 "{}: {why}\n      on {}",
@@ -338,16 +346,17 @@ fn reduce(
     implementation: &Path,
     contract: &Contract,
     mission: &Mission,
+    timeout: Duration,
 ) -> Result<Reduction, String> {
     let smaller = shrink::shrink(mission, contract, |candidate| {
-        let said = answer(implementation, &candidate.canonical())?;
+        let said = answer(implementation, &candidate.canonical(), timeout)?;
         Ok(said.as_deref() != Some(reference::run(candidate).as_slice()))
     })?;
 
     let input = smaller.mission.canonical();
     let expected = reference::run(&smaller.mission);
-    let got =
-        answer(implementation, &input)?.unwrap_or_else(|| b"<refused a valid mission>".to_vec());
+    let got = answer(implementation, &input, timeout)?
+        .unwrap_or_else(|| b"<refused a valid mission>".to_vec());
     Ok(Reduction {
         mission: input,
         expected,
@@ -378,12 +387,12 @@ pub fn differential(
 
         let input = mission.canonical();
         let expected = reference::run(&mission);
-        let got = answer(implementation, &input)?
+        let got = answer(implementation, &input, budget.timeout)?
             .unwrap_or_else(|| b"<refused a valid mission>".to_vec());
         if got != expected {
             // The first one is reduced; see `Disagreement::reduced`.
             let reduced = if disagreements.is_empty() {
-                Some(reduce(implementation, contract, &mission)?)
+                Some(reduce(implementation, contract, &mission, budget.timeout)?)
             } else {
                 None
             };

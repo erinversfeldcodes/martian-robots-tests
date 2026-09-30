@@ -128,8 +128,8 @@ pub fn catalogue(contract: &Contract) -> Vec<Case> {
     boundaries(&mut build, contract);
     build.group = "invocation";
     invocation(&mut build, contract);
-    build.group = "boundary";
-    boundary(&mut build, contract);
+    build.group = "process";
+    process(&mut build, contract);
     build.cases
 }
 
@@ -724,7 +724,11 @@ fn invocation(build: &mut Builder, contract: &Contract) {
 /// What crosses the process boundary, as distinct from what the arguments
 /// mean: input arriving for a program that was asked a question instead, and
 /// an argument that is not text at all.
-fn boundary(build: &mut Builder, contract: &Contract) {
+///
+/// Named `process` rather than `boundary`, which was a group name one letter
+/// from `boundaries` — `--case bound` selected both, and an id carried no
+/// distinction a reader could recover.
+fn process(build: &mut Builder, contract: &Contract) {
     build.invocation_with_stdin(
         "a help flag leaves the mission on stdin alone",
         &["R20"],

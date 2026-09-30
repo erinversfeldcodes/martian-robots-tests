@@ -25,6 +25,9 @@ Usage: martian-robots-verify --bin <path> [--quiet]
                  the generated modes. A group name on its own selects the
                  group: `--case scent` is every scent case
   --cases        list every case id and exit
+  --timeout <s>  how long one run of the implementation may take (default 10).
+                 Q3 leaves a hang to grader policy, so this is policy: a
+                 loaded runner should not read as a conformance failure
   --contract     write the contract to stdout, as one document
   -h, --help     print this message and exit
 
@@ -62,6 +65,7 @@ impl Task {
         let mut against_reference = 60;
         let mut seed = None;
         let mut only = None;
+        let mut timeout = run::TIMEOUT;
 
         while let Some(argument) = args.next() {
             match argument.as_str() {
@@ -88,6 +92,9 @@ impl Task {
                     });
                 }
                 "--case" => only = Some(args.next().ok_or("--case needs an id")?),
+                "--timeout" => {
+                    timeout = std::time::Duration::from_secs(number(args.next(), "--timeout")?);
+                }
                 other => return Err(format!("unknown argument: {other}")),
             }
         }
@@ -113,6 +120,7 @@ impl Task {
                 differential: u32::try_from(against_reference)
                     .map_err(|_| "--differential is too large")?,
                 seed: seed.unwrap_or(rng::Rng::DEFAULT_SEED),
+                timeout,
             },
             only,
         })
@@ -184,7 +192,7 @@ fn grade(
         ));
     }
 
-    match catalogue(contract, implementation, quiet, only) {
+    match catalogue(contract, implementation, quiet, only, budget.timeout) {
         Err(message) => fail(&message),
         // A selected run is asking about named cases, so the generated modes
         // are not run and their empty summaries are not printed.
@@ -214,6 +222,7 @@ fn catalogue(
     implementation: &Path,
     quiet: bool,
     only: Option<&str>,
+    timeout: std::time::Duration,
 ) -> Result<usize, String> {
     let everything = cases::catalogue(contract);
     let catalogue: Vec<&cases::Case> = everything
@@ -233,7 +242,7 @@ fn catalogue(
     let mut failed = 0;
 
     for case in &catalogue {
-        let seen = run::observe(implementation, &case.arguments, &case.stdin, run::TIMEOUT)?;
+        let seen = run::observe(implementation, &case.arguments, &case.stdin, timeout)?;
         match case.expect.judge(&seen) {
             None => {
                 if !quiet {

@@ -5,6 +5,12 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+/// How long a program gets before the grader gives up on it.
+///
+/// Q3 leaves a hang to grader policy, so this is a policy and not a contract —
+/// which is exactly why it belongs on a flag. Ten seconds is generous for one
+/// mission and mean on a loaded runner, and a conformance failure that is
+/// really a busy machine is the worst kind of red.
 pub const TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, PartialEq, Eq)]
