@@ -148,4 +148,4 @@ const EXPECTED_MUTATIONS: [&str; 10] = [
     "an orientation outside the vocabulary",
     "an orientation outside the vocabulary",
 ];
-const EXPECTED_MUTATION_DIGEST: &str = "917eec1f1e7ab291";
+const EXPECTED_MUTATION_DIGEST: &str = "488d0ded614257f5";

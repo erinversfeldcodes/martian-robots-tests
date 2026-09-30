@@ -27,16 +27,29 @@ impl Grammar {
     /// Characters a runtime is liable to treat as whitespace, minus the ones
     /// this grammar actually admits as separators or line structure.
     ///
-    /// The pool is about the world outside the contract - what someone else's
-    /// `split_whitespace` accepts - so it cannot be derived. The filter is the
-    /// contract: admit a character in `ws` and it stops being injected, with
-    /// no list to remember to update.
+    /// Stated as a principle rather than a list, because a list is a thing
+    /// somebody has to remember to extend and a hand-picked one leaves exactly
+    /// the characters nobody thought of. The principle is: everything Unicode
+    /// calls whitespace, which is what `char::is_whitespace` reports, plus two
+    /// families outside that property that runtimes treat as whitespace anyway
+    /// — the ASCII information separators, which several languages' split
+    /// routines and line readers accept, and the byte-order mark, which text
+    /// pipelines strip. A narrower pool let a reader that folded only the
+    /// characters outside it pass every gate in this suite.
+    ///
+    /// The filter is the contract: admit a character in `ws` and it stops
+    /// being injected, with nothing to update.
     pub fn not_separators(&self) -> Vec<char> {
-        const LIABLE: [char; 8] = [
-            '\u{b}', '\u{c}', '\u{a0}', '\u{1680}', '\u{2002}', '\u{2028}', '\u{3000}', '\u{feff}',
-        ];
-        LIABLE
-            .into_iter()
+        /// No character above this is whitespace by the Unicode property, so
+        /// the scan has somewhere to stop. U+3000 is the last one.
+        const LAST_WHITESPACE: u32 = 0x3000;
+        const ALSO_TREATED_AS_WHITESPACE: [char; 5] =
+            ['\u{1c}', '\u{1d}', '\u{1e}', '\u{1f}', '\u{feff}'];
+
+        (0..=LAST_WHITESPACE)
+            .filter_map(char::from_u32)
+            .filter(|character| character.is_whitespace())
+            .chain(ALSO_TREATED_AS_WHITESPACE)
             .filter(|character| {
                 !self.separators.contains(character)
                     && !self
@@ -373,6 +386,34 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(grammar.line_endings, ["\n", "\r\n"]);
+    }
+
+    #[test]
+    fn the_injected_characters_cover_the_families_a_hand_list_misses() {
+        // Each of these is whitespace to some runtime and not to this
+        // contract, and none of them was in the hand-picked list this pool
+        // replaced. A reader that folded only these to spaces passed every
+        // gate in the suite.
+        let grammar = Contract::load().unwrap().grammar;
+        let pool = grammar.not_separators();
+        for (character, what) in [
+            ('\u{85}', "the next-line control"),
+            ('\u{1f}', "an ASCII information separator"),
+            ('\u{2029}', "the paragraph separator"),
+            ('\u{202f}', "a narrow no-break space"),
+            ('\u{2003}', "an em space"),
+            ('\u{feff}', "the byte-order mark"),
+        ] {
+            assert!(pool.contains(&character), "{what} is not injected");
+        }
+        assert!(pool.len() >= 20, "only {} character(s)", pool.len());
+
+        for admitted in [' ', '\t', '\n', '\r'] {
+            assert!(
+                !pool.contains(&admitted),
+                "the grammar admits {admitted:?}, so it must not be injected"
+            );
+        }
     }
 
     #[test]

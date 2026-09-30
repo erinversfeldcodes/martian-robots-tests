@@ -240,6 +240,48 @@ fn whitespace(build: &mut Builder) {
     );
 
     build.case(
+        "a next-line control is not a separator",
+        &["R4", "R12"],
+        "U+0085 is whitespace to Unicode and a line break to several runtimes, \
+         and neither to this contract. A reader whose idea of whitespace came \
+         from its language rather than from the grammar folds it to a space \
+         and accepts the mission",
+        "5 3\n1\u{85}1 E\nRF\n",
+        Expect::Rejection(Diagnostic::at_line(2, &["R4", "R12"])),
+    );
+
+    build.case(
+        "an information separator is not a separator",
+        &["R4", "R12"],
+        "U+001F is ASCII, invisible, and not whitespace by the Unicode \
+         property - but it is a field separator by its own name, and several \
+         split routines and line readers accept it as one. It is the character \
+         a pool drawn from Unicode alone would miss",
+        "5\u{1f}3\n1 1 E\nRF\n",
+        Expect::Rejection(Diagnostic::at_line(1, &["R4", "R12"])),
+    );
+
+    build.case(
+        "a paragraph separator does not end a line",
+        &["R4", "R12"],
+        "R11 gives two line endings and this is not one of them. Put where an \
+         ending belongs, a reader that treats it as one sees a well-formed \
+         mission; a reader that follows the grammar sees a grid line with five \
+         tokens on it",
+        "5 3\u{2029}1 1 E\nRF\n",
+        Expect::Rejection(Diagnostic::at_line(1, &["R4", "R12"])),
+    );
+
+    build.case(
+        "a narrow no-break space is not a separator",
+        &["R4", "R12", "R7"],
+        "indistinguishable from a space on screen, and this one lands in an \
+         instruction string, where R7 governs it as readily as R4 does",
+        "5 3\n1 1 E\nR\u{202f}F\n",
+        Expect::Rejection(Diagnostic::at_line(3, &["R4", "R12", "R7"])),
+    );
+
+    build.case(
         "a vertical tab at the end of an instruction line is not whitespace",
         &["R4", "R12", "R7"],
         "the trailing edge, where `ows` makes real whitespace invisible. \

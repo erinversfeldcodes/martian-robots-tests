@@ -1060,3 +1060,43 @@ fn a_mode_that_judged_nothing_is_the_suite_failing_and_not_the_program_passing()
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn a_reader_whose_whitespace_came_from_its_language_is_caught() {
+    let fixtures = Fixtures::new("narrow-whitespace");
+    // Folds every Unicode whitespace character to a space *except* the eight
+    // this suite used to inject. So it satisfies every check a hand-picked
+    // list could make, and is caught only because the pool is now derived from
+    // the Unicode property rather than written out. One `is_whitespace` call
+    // is the whole defect, and it is the likeliest real bug in the family.
+    let implementation = fixtures.implementation(
+        "narrow-whitespace",
+        &format!(
+            "MISBEHAVE=narrow-whitespace exec {}",
+            Path::new(env!("CARGO_BIN_EXE_misbehave")).display()
+        ),
+    );
+
+    let report = grade_with(
+        &implementation,
+        &[
+            "--spelling",
+            "0",
+            "--properties",
+            "0",
+            "--differential",
+            "0",
+            "--rejections",
+            "300",
+        ],
+    );
+    assert!(
+        report
+            .stdout
+            .lines()
+            .any(|line| line.starts_with("ACCEPTED") && line.contains("a foreign separator")),
+        "a character the grammar does not admit was accepted as a separator \
+         and nothing said so:\n{}",
+        report.stdout
+    );
+}

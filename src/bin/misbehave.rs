@@ -33,6 +33,8 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
 
+    let input = fold_whitespace(input, &defect);
+
     match Mission::read_back(&input, &contract.grammar) {
         Ok(mission) if mission.is_valid(&contract) => {
             print!("{}", run(&mission, &defect));
@@ -43,6 +45,42 @@ fn main() -> ExitCode {
             ExitCode::from(1)
         }
     }
+}
+
+/// A reader whose idea of whitespace came from its language rather than from
+/// the grammar — one `is_whitespace` call, which is the whole bug.
+///
+/// `narrow-whitespace` folds only the characters a *narrower* injection pool
+/// missed: the eight this suite used to draw from are left alone, so it passes
+/// every check a hand-picked list could make and fails only because the pool
+/// is now derived from the Unicode property. It is the demonstration that
+/// widening the alphabet bought something.
+fn fold_whitespace(input: Vec<u8>, defect: &str) -> Vec<u8> {
+    // The pool this suite drew from before it was derived. A reader that also
+    // folded these would be caught by a catalogue case, which is not the point
+    // being made.
+    const ONCE_INJECTED: [char; 8] = [
+        '\u{b}', '\u{c}', '\u{a0}', '\u{1680}', '\u{2002}', '\u{2028}', '\u{3000}', '\u{feff}',
+    ];
+
+    if defect != "permissive-whitespace" && defect != "narrow-whitespace" {
+        return input;
+    }
+
+    String::from_utf8_lossy(&input)
+        .chars()
+        .map(|character| {
+            let spared = character == '\n'
+                || character == '\r'
+                || (defect == "narrow-whitespace" && ONCE_INJECTED.contains(&character));
+            if character.is_whitespace() && !spared {
+                ' '
+            } else {
+                character
+            }
+        })
+        .collect::<String>()
+        .into_bytes()
 }
 
 /// §2.2, with one thing wrong.
