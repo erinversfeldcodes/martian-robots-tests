@@ -23,6 +23,11 @@ pub enum Expectation {
 enum Invalidity {
     Grammar,
     Semantic,
+    /// Refused, and which mechanism refuses it is incidental. A character that
+    /// is not a separator makes a number unreadable where a number belongs and
+    /// becomes an unknown instruction where instructions belong; the claim
+    /// being made is the same one either way.
+    Either,
 }
 
 struct Broken {
@@ -44,6 +49,15 @@ pub fn mutate(rng: &mut Rng, mission: &Mission, contract: &Contract) -> Option<M
         return None;
     }
     let robot = rng.below(u32::try_from(mission.robots.len()).ok()?) as usize;
+
+    // A quarter of the time, put a character where a separator belongs that
+    // the grammar does not admit as one. This is the largest family of
+    // realistic parser bugs: every mainstream runtime's idea of "whitespace"
+    // is wider than `ws`, so a program built on one accepts input the contract
+    // refuses, and no other family here notices.
+    if rng.chance(4) {
+        return break_the_whitespace(rng, mission, contract);
+    }
 
     // A third of the time, break the shape of the input rather than the
     // content of one line. §2.4 says a missing or extra line shifts the blocks
@@ -78,6 +92,117 @@ pub fn mutate(rng: &mut Rng, mission: &Mission, contract: &Contract) -> Option<M
         kind: broken.kind,
         rendered,
         expectation: Expectation::At(broken.at + 1, broken.tags),
+    })
+}
+
+/// Put a character the grammar does not admit where a separator belongs.
+///
+/// The discipline that makes this claim anything is one character: every input
+/// differs from a valid mission by exactly the character injected, and putting
+/// a space there restores a valid mission. That is asserted before the input is
+/// used, so a failure means the program accepted *this character* rather than
+/// something else that happened to be wrong with the line.
+///
+/// The positions are the ones where a space would be legal, and the one that
+/// catches the most parsers is inside an otherwise-legal run: a program that
+/// trims and splits stops at the offender and blames the innocent space beside
+/// it.
+fn break_the_whitespace(rng: &mut Rng, mission: &Mission, contract: &Contract) -> Option<Mutation> {
+    let foreign = *rng.pick(&contract.grammar.not_separators());
+    let space = *contract.grammar.separators.first()?;
+    let text = String::from_utf8(mission.canonical()).ok()?;
+    let lines: Vec<String> = text.lines().map(ToString::to_string).collect();
+
+    // Any line but the grid line belongs to a robot, and a mission with no
+    // robots has only the grid line to work with.
+    let at = rng.below(u32::try_from(lines.len()).ok()?) as usize;
+    let line = &lines[at];
+
+    let (where_at, broken) = match rng.below(4) {
+        0 => ("leading", format!("{foreign}{line}")),
+        1 => ("trailing", format!("{line}{foreign}")),
+        // Replace a separator, which only a line that has one can do.
+        2 => {
+            let separator = line.find(space)?;
+            (
+                "where a separator belongs",
+                format!(
+                    "{}{foreign}{}",
+                    &line[..separator],
+                    &line[separator + space.len_utf8()..]
+                ),
+            )
+        }
+        // Hidden inside a run of real separators.
+        _ => {
+            let separator = line.find(space)?;
+            (
+                "inside a run of separators",
+                format!(
+                    "{}{space}{foreign}{space}{}",
+                    &line[..separator],
+                    &line[separator + space.len_utf8()..]
+                ),
+            )
+        }
+    };
+
+    // The name carries all three axes, because which cell of the matrix broke
+    // is the finding: a program that rejects a leading one and accepts one
+    // hidden in a run has a trim-then-split reader, and nothing else says so.
+    let line_type = match at {
+        0 => "the grid line",
+        _ if at % 2 == 1 => "a position line",
+        _ => "an instruction line",
+    };
+    let kind = match (where_at, line_type) {
+        ("leading", "the grid line") => "a foreign separator, leading, on the grid line",
+        ("leading", "a position line") => "a foreign separator, leading, on a position line",
+        ("leading", _) => "a foreign separator, leading, on an instruction line",
+        ("trailing", "the grid line") => "a foreign separator, trailing, on the grid line",
+        ("trailing", "a position line") => "a foreign separator, trailing, on a position line",
+        ("trailing", _) => "a foreign separator, trailing, on an instruction line",
+        ("where a separator belongs", "the grid line") => {
+            "a foreign separator, where a separator belongs, on the grid line"
+        }
+        ("where a separator belongs", _) => {
+            "a foreign separator, where a separator belongs, on a position line"
+        }
+        (_, "the grid line") => "a foreign separator, inside a run, on the grid line",
+        _ => "a foreign separator, inside a run, on a position line",
+    };
+
+    let mut mutated = lines.clone();
+    mutated[at] = broken;
+    let rendered = format!("{}\n", mutated.join("\n")).into_bytes();
+
+    // One character: put a space where the offender is and the mission comes
+    // back. Without this the case could be failing for any other reason.
+    let mut restored = lines.clone();
+    restored[at] = mutated[at].replace(foreign, &space.to_string());
+    let restored = format!("{}\n", restored.join("\n")).into_bytes();
+    if !Mission::read_back(&restored).is_ok_and(|mission| {
+        mission.is_valid(
+            contract.limits.max_coordinate,
+            contract.limits.max_instructions,
+        )
+    }) {
+        return None;
+    }
+
+    check(
+        &rendered,
+        &Invalidity::Either,
+        contract.limits.max_coordinate,
+        contract.limits.max_instructions,
+    )?;
+
+    Some(Mutation {
+        kind,
+        rendered,
+        // Q6 leaves the characterisation open: a bad separator, or a character
+        // outside the vocabulary. Any governing ruling satisfies §2.5.
+        expectation: Expectation::At(at + 1, vec!["R4", "R12", "R7"]),
     })
 }
 
@@ -345,8 +470,10 @@ fn check(
 ) -> Option<()> {
     let refused = match (invalidity, Mission::read_back(rendered)) {
         (Invalidity::Grammar, read) => read.is_err(),
-        (Invalidity::Semantic, Ok(mission)) => !mission.is_valid(max_coordinate, max_instructions),
-        (Invalidity::Semantic, Err(_)) => true,
+        (Invalidity::Semantic | Invalidity::Either, Ok(mission)) => {
+            !mission.is_valid(max_coordinate, max_instructions)
+        }
+        (Invalidity::Semantic | Invalidity::Either, Err(_)) => true,
     };
     refused.then_some(())
 }
@@ -437,6 +564,6 @@ mod tests {
                 kinds.insert(mutation.kind);
             }
         }
-        assert_eq!(kinds.len(), 15, "only built {kinds:?}");
+        assert_eq!(kinds.len(), 25, "only built {kinds:?}");
     }
 }

@@ -590,3 +590,42 @@ fn a_parser_that_swallows_blank_lines_is_caught_by_the_framing_mutations() {
         report.stdout
     );
 }
+
+#[test]
+fn an_implementation_that_treats_any_odd_byte_as_whitespace_is_caught() {
+    let fixtures = Fixtures::new("permissive-whitespace");
+    // A conforming program behind a filter that turns vertical tab, form feed
+    // and every non-ASCII byte into a space before it ever sees the input.
+    // That is the shape of a real parser bug — one `is_whitespace` where the
+    // grammar says space or tab — and it is invisible to every other mode: the
+    // program still simulates correctly, still agrees with itself across
+    // respellings, and still satisfies every invariant. Only an input that is
+    // wrong in exactly one character says otherwise.
+    let probe = Path::new(env!("CARGO_BIN_EXE_probe"));
+    let implementation = fixtures.implementation(
+        "permissive",
+        &format!("tr '\\013\\014\\200-\\377' ' ' | {}", probe.display()),
+    );
+
+    let report = grade_with(
+        &implementation,
+        &[
+            "--spelling",
+            "0",
+            "--properties",
+            "0",
+            "--rejections",
+            "300",
+            "--seed",
+            "11",
+        ],
+    );
+    assert!(
+        report
+            .stdout
+            .lines()
+            .any(|line| line.starts_with("ACCEPTED") && line.contains("a foreign separator")),
+        "a program that widens what separates tokens must be caught:\n{}",
+        report.stdout
+    );
+}

@@ -121,15 +121,15 @@ const EXPECTED_MISSIONS: [&str; 12] = [
 const EXPECTED_MISSION_DIGEST: &str = "4f3c4f2b65bcc2ce";
 const EXPECTED_SPELLING_DIGEST: &str = "d1c614aec33820a9";
 const EXPECTED_MUTATIONS: [&str; 10] = [
-    "an instruction string over the limit",
+    "a foreign separator, inside a run, on a position line",
     "an extra token on a position line",
-    "an instruction string over the limit",
-    "a start off the world",
-    "a position line with no orientation",
-    "a start off the world",
-    "a start off the world",
-    "an extra token on a position line",
-    "a robot coordinate over the limit",
+    "a foreign separator, inside a run, on a position line",
     "a carriage return that would make a line out of nothing",
+    "input that stops after a position line",
+    "input that stops after a position line",
+    "an instruction string over the limit",
+    "a position line with no orientation",
+    "an instruction string over the limit",
+    "a blank line inserted before an instruction line",
 ];
-const EXPECTED_MUTATION_DIGEST: &str = "64a72dbe41ed1d00";
+const EXPECTED_MUTATION_DIGEST: &str = "db706bfcf0ff7983";
