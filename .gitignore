@@ -1,3 +1,9 @@
 /target
 **/*.rs.bk
 .DS_Store
+
+# An instrumented implementation writes a coverage profile per process, and a
+# run spawns hundreds. With LLVM_PROFILE_FILE set they land where it points;
+# without it they land here, so they are ignored rather than committed.
+*.profraw
+*.profdata

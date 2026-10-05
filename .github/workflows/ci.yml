@@ -29,5 +29,8 @@ jobs:
       - name: Linted, warnings denied
         run: cargo clippy --all-targets -- -D warnings
 
+      - name: Tested, including the suite graded against broken implementations
+        run: cargo test --quiet
+
       - name: The contract is coherent
         run: cargo run --quiet -- --contract > /dev/null
