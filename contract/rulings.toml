@@ -175,8 +175,8 @@ rationale = "The unit is the line, so one diagnostic for an offending line satis
 id = "R26"
 status = "ruled"
 question = "How does an implementation report which contract version it implements?"
-ruling = "`--version`, as the sole argument, prints text containing the contract version to stdout, exits 0, and reads no stdin. Given alongside any other argument it is a usage error, per R21."
-rationale = "§2.7 obliges an implementation to report its version, and before this ruling there was nowhere to report it: R21 made every argument but a help flag a usage error, so the obligation could not be satisfied by a conforming program. Only containing the version is pinned - the text around it is implementation-chosen, as help's is - which is enough for a suite to refuse an implementation built against a different major."
+ruling = "`--version`, as the sole argument, prints text containing the contract's major and minor version to stdout, exits 0, and reads no stdin. Given alongside any other argument it is a usage error, per R21."
+rationale = "§2.7 obliges an implementation to report its version, and before this ruling there was nowhere to report it: R21 made every argument but a help flag a usage error, so the obligation could not be satisfied by a conforming program. Only containing the version is pinned - the text around it is implementation-chosen, as help's is. The major and minor rather than the whole string, because the patch component counts releases of the suite that enforces this contract: a suite release that closes a false green changes what is detected and not what conforms, and an implementation that was right before it must still be right after. Reporting the patch as well satisfies this, since text containing 2.1.3 contains 2.1."
 
 [[ruling]]
 id = "Q1"

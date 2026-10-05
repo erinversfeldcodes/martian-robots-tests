@@ -9,8 +9,9 @@ pub enum Expect {
     Rejection(Diagnostic),
     Help,
     UsageError,
-    /// The version flag alone. Only that the version appears is pinned; the
-    /// text around it belongs to the implementation, as help's does.
+    /// The version flag alone, carrying the version conformance depends on —
+    /// the major and minor, never the patch. Only that it appears is pinned;
+    /// the text around it belongs to the implementation, as help's does.
     Version(String),
     /// A flag invocation with a mission on stdin. R20 and R21 both oblige a
     /// flag to leave stdin unread, which has two consequences an outside
@@ -138,7 +139,7 @@ impl Expect {
                     return Some(format!("exit {}, expected 0", code_of(seen)));
                 }
                 let said = String::from_utf8_lossy(&seen.stdout);
-                if !said.contains(version.as_str()) {
+                if !reports_version(&said, version) {
                     return Some(format!(
                         "stdout does not report {version}: {}",
                         show(&seen.stdout)
@@ -249,6 +250,21 @@ fn code_of(seen: &Observation) -> String {
         Ending::Signal => "signal".to_string(),
         Ending::Timeout => "timeout".to_string(),
     }
+}
+
+/// Whether `said` reports `wanted` as a version rather than as a substring.
+///
+/// The same trap as a line reference: a plain `contains` lets `2.10` answer a
+/// demand for `2.1`, and `12.1` answer one for `2.1`. So the match has to sit
+/// on a boundary — no digit or dot before it, no digit immediately after — and
+/// a patch component may follow, because reporting `2.1.3` reports `2.1`.
+fn reports_version(said: &str, wanted: &str) -> bool {
+    said.match_indices(wanted).any(|(at, _)| {
+        let before = said[..at].chars().next_back();
+        let after = said[at + wanted.len()..].chars().next();
+        !before.is_some_and(|character| character.is_ascii_digit() || character == '.')
+            && !after.is_some_and(|character| character.is_ascii_digit())
+    })
 }
 
 /// Bytes as a readable string, cut short: a case may carry a megabyte of
@@ -418,11 +434,11 @@ mod tests {
 
     #[test]
     fn a_version_must_actually_name_the_version() {
-        let expect = Expect::Version("2.0.0".to_string());
+        let expect = Expect::Version("2.1".to_string());
         assert!(
             expect
                 .judge(&seen(
-                    b"martian-robots 2.0.0 (contract 2.0.0)\n",
+                    b"martian-robots 2.1.0 (contract 2.1)\n",
                     b"",
                     Ending::Code(0)
                 ))
@@ -435,6 +451,33 @@ mod tests {
                 .is_some(),
             "a different version is a different contract"
         );
+        assert!(
+            expect
+                .judge(&seen(b"2.1\n", b"", Ending::Code(0)))
+                .is_none(),
+            "the patch counts suite releases, so reporting it is optional"
+        );
+        assert!(
+            expect
+                .judge(&seen(b"2.1.7\n", b"", Ending::Code(0)))
+                .is_none(),
+            "text containing 2.1.7 contains 2.1"
+        );
+        for pretending in [
+            &b"2.10\n"[..],
+            &b"2.10.4\n"[..],
+            &b"12.1\n"[..],
+            &b"12.1.0\n"[..],
+            &b"1.2.1\n"[..],
+        ] {
+            assert!(
+                expect
+                    .judge(&seen(pretending, b"", Ending::Code(0)))
+                    .is_some(),
+                "{:?} is not 2.1",
+                String::from_utf8_lossy(pretending)
+            );
+        }
         assert!(
             expect
                 .judge(&seen(b"2.0.0\n", b"", Ending::Code(1)))

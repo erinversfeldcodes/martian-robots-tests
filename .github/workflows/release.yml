@@ -1,0 +1,82 @@
+name: release
+
+# A tag is the only thing a consumer pins, so a tag has to mean something. This
+# workflow refuses one that disagrees with the version in the tree, and refuses
+# to publish a release the suite itself cannot pass.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+
+      # The tag, Cargo.toml and contract/limits.toml must be the same number.
+      # A test in the tree holds the last two equal; nothing but this can hold
+      # the tag to them, and a tag that lies is worse than no tag at all. The
+      # binary is asked rather than the manifest, so what is checked is the
+      # artefact somebody will install.
+      - name: The tag is the version
+        run: |
+          tagged="${GITHUB_REF_NAME#v}"
+          built=$(cargo run --quiet -- --version | awk '{ print $2 }')
+          if [ "$tagged" != "$built" ]; then
+            echo "tag $GITHUB_REF_NAME names $tagged; this builds $built" >&2
+            exit 1
+          fi
+
+      - name: Formatted
+        run: cargo fmt --all --check
+
+      - name: Linted, warnings denied
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Tested, including the suite graded against broken implementations
+        run: cargo test --quiet
+
+      # Generated, never committed: a rendering in the tree is a second copy of
+      # the truth that can be edited and can go stale. A release is the right
+      # home for one, because a release cannot be edited.
+      - name: Render the contract
+        run: cargo run --quiet -- --contract > CONTRACT.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cat > NOTES.md <<NOTES
+          Contract $version, and the suite that enforces it. They are one
+          artifact and carry one version: the major and minor say what conforms,
+          and the patch counts releases of the suite, so closing a false green
+          cannot unconform an implementation that was already right.
+
+          Install it:
+
+              cargo install --git ${{ github.server_url }}/${{ github.repository }} \\
+                --tag $GITHUB_REF_NAME --locked
+
+          Run it against an implementation:
+
+              martian-robots-verify --bin /path/to/martian-robots
+
+          \`CONTRACT.md\` below is rendered from \`contract/\` at this tag. It is
+          not in the tree, because a generated file in a repository is a second
+          copy of the truth.
+          NOTES
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file NOTES.md \
+            CONTRACT.md

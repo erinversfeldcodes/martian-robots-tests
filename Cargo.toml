@@ -1,6 +1,6 @@
 [package]
 name = "martian-robots-verify"
-version = "0.1.0"
+version = "2.1.0"
 description = "The Martian Robots CLI contract, and the suite that enforces it"
 edition = "2024"
 rust-version = "1.93"
@@ -31,12 +31,14 @@ toml = "0.9"
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 
-# This library is not a published API. It exists so the suite and the
-# conforming probe can share the contract loader, the mission model and the
-# reference simulation, and nothing outside this repository depends on it. The
-# three lints below describe obligations to callers who do not exist;
-# satisfying them would add thirty-three attributes and doc sections that state
-# nothing true.
+# This library has one documented entry point for callers outside this
+# repository: `Contract::load`, so an implementation can derive its constants
+# from the contract in a build script rather than restating them. Everything
+# else exists so the suite, the conforming probe and the near-miss gallery can
+# share the contract loader, the mission model and the reference simulation.
+# The three lints below describe obligations to callers of that internal
+# surface; satisfying them would add thirty-three attributes and doc sections
+# that state nothing true.
 must_use_candidate = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"

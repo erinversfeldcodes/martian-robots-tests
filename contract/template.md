@@ -139,6 +139,15 @@ gives it.
   conforming implementation already gives, is a **minor** bump.
 - Extending the contract to a surface it does not yet cover is a **minor** bump
   that adds a section rather than rewriting this one.
+- Releasing the suite that enforces this contract — a case added, a generator
+  widened, a false green closed — is a **patch** bump. None of those change what
+  conforms, only what is caught, so an implementation that was correct before a
+  patch is correct after it. This is why R26 asks for the major and minor rather
+  than the whole version: a suite release must not unconform a correct program.
+
+The contract and the suite that enforces it are released together under this
+one version, because they are one artifact — a rule nobody checks is a
+suggestion. A consumer pins one number.
 
 ## 3. Ambiguity rulings
 
@@ -165,3 +174,4 @@ tool can tell the difference between a question we answered and one we did not.
 |---|---|---|
 | 1.0.0 | 2026-09-22 | Initial contract for the command-line surface: the grammar and its framing rules, the simulation's semantics, the output format, the failure discipline, the content of diagnostics, the invocation surface, and rulings R1–R25. |
 | 2.0.0 | 2026-09-29 | Three places where the rule was not where a reader would look for it. R4 now says spaces and tabs in all three of its clauses and names the grammar, so the rejection of other whitespace no longer rests on Q6's note — Q6 keeps only the characterisation question, which is genuinely open. R12 is stated as a rule about productions rather than about surplus tokens, so a short line and a malformed number are governed rather than arguable. R26 gives §2.7's version obligation a surface to be satisfied by; before it, `--version` was a usage error and the sentence could not be met. Major, by §2.7's own test: R26 changes what an input produces, and R12 narrows the outputs a conforming implementation may give. |
+| 2.1.0 | 2026-09-30 | The patch component is given a meaning: it counts releases of the suite, so the contract and the suite it comes with carry one version between them. R26 follows it, asking for the major and minor rather than the whole string, so that a suite release closing a false green cannot unconform an implementation that was already right. Minor, by §2.7's own test: it settles how the third number is read and broadens what R26 accepts without changing the answer any conforming implementation already gives. R7 is scoped where it was being read too widely: its question is about an instruction string or an orientation, so a character that is not a separator on the grid line — a line carrying neither — is governed by R4 and R12 and not by R7. Q6's note says so rather than offering all three everywhere. R25 gains a companion demand: where a rejection carries independent violations, each is expected to cite a ruling that governs it, rather than one tag standing in for both. Both narrow the outputs a conforming implementation may give, which §2.7 makes a major bump — recorded here as a minor one because this is the first tagged release, and the rows above it are revisions of an unpublished document rather than releases anybody could have built against. |
