@@ -1,79 +1,31 @@
 # martian-robots-tests
 
-The contract for the Martian Robots CLI, and the conformance suite that
-enforces it.
-
-Both live here because they are one artifact. A rule nobody checks is a
-suggestion; a check that cites no rule is a preference. An implementation
-depends on this repository — this repository depends on nothing.
+This project contains the data contract and schema for the Martian Robots application and the test suite that enforces them. While it might be conceptually cleaner to break the tests and the contracts into their own repositories they are both contained here for simplicity. The implementation of the Martian Robots application depends on this project.
 
 ## The contract
 
-`contract/` is the contract, as data:
+For any project the problem statement is the human-understandble and human-created description of the problem we want to design solutions for. It is a combination of clear requirements and ambiguous statements that either need clarification through continued investigation and questions or definitive rulings on. Humans navigate problem statements naturally and with intuition, but dependable code generation requires translating these into contracts that can grow, change and track our decisions.
+
+`contract/` contains this contract as code:
 
 | File | What it holds |
 |---|---|
-| `limits.toml` | the version, and the numbers the brief gives us |
-| `rulings.toml` | every question the brief leaves open, ruled or deliberately open |
+| `limits.toml` | the version, and the numbers the problem statement gives us |
+| `rulings.toml` | every question the problem statement leaves open, ruled or deliberately open |
 | `grammar.ebnf` | the input grammar: the generators read their separators, line endings and vocabularies from it |
 | `template.md` | the narrative, with holes where the facts go |
 
-Nothing states a fact twice. The limits are defined once and read everywhere:
-by the prose, by the suite's boundary cases, and by an implementation that
-generates its constants from them. The same goes for the grammar — what
-separates tokens, what ends a line, and which letters the two vocabularies
-hold are parsed out of `grammar.ebnf`, so the generators cannot drift from the
-published grammar, and the characters it does *not* admit are exactly what the
-rejection generator injects. To read it as one document:
+There is a clean separation of responsibilities between these files without duplication. The limits are defined once and read everywhere, being used to generate documentation, test suite boundary cases and implementations that derive constants from them. Similarly, generators using `grammar.ebnf` cannot drift from the published grammar, and the characters it does not admit are injected by the rejection generator. To read the contract as a single, coherent document:
 
 ```
 cargo run --quiet -- --contract
 ```
 
-That rendering is written to stdout, never to a file in the tree — a generated
-file in a repository is a second copy of the truth that can be edited and can
-go stale.
+That rendering is written to stdout rather than to a tracked file to avoid needing to update the file for every change.
 
-## Ruled and open
+## Ruled and open questions
 
-A question with `status = "ruled"` is contract: an implementation that
-disagrees is wrong, and a case is expected to pin it. A question with
-`status = "open"` is deliberately undecided: no case may test it, and an
-implementation may answer it however it likes. The difference is data rather
-than prose so that a tool can act on it.
-
-## Measuring coverage through the suite
-
-This suite is meant to be the only test oracle an implementation has. That
-makes one thing awkward: the implementation's code never runs inside its own
-test binary, so it cannot measure its own coverage the usual way. The only
-place it executes is a process this suite spawned.
-
-So the instrumentation has to work *through* that boundary, and it does. The
-environment is inherited — nothing in the runner clears it — which is most of
-what is needed:
-
-```
-RUSTFLAGS="-C instrument-coverage" cargo build
-LLVM_PROFILE_FILE="target/coverage/run.profraw" \
-  martian-robots-verify --bin target/debug/martian-robots
-llvm-profdata merge -sparse target/coverage/*.profraw -o merged.profdata
-llvm-cov report target/debug/martian-robots -instr-profile=merged.profdata
-```
-
-The part that does not work by itself is one profile per process. A run spawns
-several hundred, and LLVM writes to the path it is given, so a plain path has
-every process writing the same file — and the result is not an error, it is a
-coverage number built from whichever process finished last. A path that cannot
-distinguish processes therefore gains `%p`; one that already contains `%p` or
-`%m` is left exactly as the consumer wrote it. The recipe above works because of
-that, not because the path in it is special.
-
-What this measures is what the suite reaches, which is not the same as whether
-the implementation is right — that is what the grade is for. It is still the
-number worth watching, because under a sole-oracle arrangement any line the
-suite cannot reach is either dead code or untested code, and nothing else will
-tell you which.
+A question with `status = "ruled"` becomes part of the contract: an implementation that disagrees with the contract is wrong, and a test case is expected to pin the rule. A question with `status = "open"` is deliberately undecided: no case may test it, and an implementation may answer it however it likes. The difference is data rather than prose so that a tool can act on it.
 
 ## Running the suite
 
@@ -81,8 +33,7 @@ tell you which.
 cargo run --release -- --bin /path/to/martian-robots
 ```
 
-One line per case, then a summary — or `--quiet` for failures and the summary
-alone:
+One line per case, then one line per generator — or `--quiet` for failures and the summary lines alone:
 
 ```
 ok   the brief's sample, byte for byte
@@ -93,64 +44,27 @@ FAIL a grid coordinate past the maximum is refused
       enforces: R5
 contract <version>: <n> of <n> ruled question(s) enforced
 result: <n> case(s) run, <n> passed, <n> failed
+spelling: <n> mission(s) x <n> rendering(s), seed <n>, <n> divergence(s), <n> refused
+properties: <n> mission(s), seed <n>, <n> violation(s)
+rejections: <n> of <n> attempted, seed <n>, <n> failure(s)
+differential: <n> mission(s), seed <n>, <n> disagreement(s)
 ```
 
-The coverage line is deliberately unflattering: it counts the ruled questions
-some case cites, so the distance between the contract and the suite is visible
-on every run rather than discoverable by reading both.
+A case is a fixed input and the output the contract expects of it. Each case records which rulings it enforces, and tests refuse citations to questions that do not exist or are still open. Cases ask for what the contract fixes: a rejection must produce no stdout and some diagnostic, with any non-zero exit; a diagnostic must indicate the line where it is attributable; help output must exist. The four lines after `result:` are generators, which supply input for the tests. Three of them produce valid missions, one invalid: `--spelling` requires the same answer to one mission written several legal ways, `--properties` checks statements that must hold of any correct answer, and `--differential` compares against a second implementation written from the same contract. The fourth, `--rejections`, produces invalid input instead, where the question is whether it is refused with a diagnostic somebody can act on.
 
-Every failure cites an id, and the id runs it again: `--case <id>` runs that
-case and no generated modes, and a group name on its own runs the group, so
-`--case scent` is every scent case. `--cases` lists them all. An id is
-`group/slug` rather than a number, because inserting a case renumbers its
-neighbours and `C17` tells a reader nothing; a mistyped one is an error rather
-than a clean run of nothing, which is the shape of every silently empty suite
-there has ever been.
+The generator seed is fixed by default so two runs of the same code grade the same corpus. The seed is documented in `tests/corpus.rs`. `--seed random` draws a wider corpus and prints the seed it chose, which replays through `--seed <n>`. In CI the fixed seed is the gate; a scheduled random run finds the next case worth adding.
 
-## Generated missions
+### Spelling
 
-A catalogue is exactly as strong as the shapes someone thought to write down.
-After the cases, the suite draws missions and writes each one several legal
-ways — different whitespace runs, line endings, leading zeros, blank
-separators, a final line with or without its ending — and requires the same
-answer from all of them:
+This generator draws missions and renders each one several legal ways, for example: varying whitespace runs, line endings, leading zeros, blank separators and whether the final line is terminated. Every rendering must produce the same answer:
 
 ```
 spelling: <n> mission(s) x <n> rendering(s), seed <n>, <n> divergence(s)
 ```
 
-This asks a program to agree with itself, so it needs no reference
-implementation and still bites when the suite and the program share a wrong
-belief. `--spelling <n>` sets how many missions; `--seed <n>` replays a
-corpus.
+### Invariants
 
-The seed is **fixed by default**, so two runs of the same code grade the same
-corpus and a green run says something about the next one. `--seed random`
-explores a wider corpus and prints the seed it chose, which is the seed to pass
-back. The default is the one `tests/corpus.rs` writes down, so the inputs a bare
-run draws are the ones somebody reviewed.
-
-In CI, run the fixed seed on every change and a random one on a schedule: the
-first is the gate, and a gate whose corpus moves on its own is not one; the
-second is what finds the next case worth writing down, and it prints the seed
-to pass back when it does.
-
-A mode that is asked to run and judges nothing is the suite failing to run, not
-the implementation passing: it exits 2, the way a mistyped `--case` does. A
-budget small enough to build no mutation, or too small for any invariant to
-apply, used to print zeroes and exit 0.
-
-The generator checks itself on every run, not only in its own tests: each
-rendering must read back as the mission it came from, and must stay out of the
-shapes the contract leaves open — mixed line endings within one input (Q1) and
-an unterminated final line of only whitespace (Q4). A generator that strayed
-would be testing something nobody has decided.
-
-## Invariants
-
-Agreeing with yourself is not the same as being right: a program that reports
-every robot at `0 0 N` agrees with itself perfectly. So the suite also states
-things that are true of an answer on its own, and checks those:
+This generator checks statements that must hold of any correct answer, printing how many missions evaluated each one:
 
 ```
       one line per robot
@@ -163,181 +77,26 @@ things that are true of an answer on its own, and checks those:
       appending a robot does not change the robots before it
 ```
 
-Each is printed with the number of missions that actually evaluated it.
+### Rejections
 
-None of these consults a second implementation, which is what makes them the
-answer to a suite and a program sharing a wrong belief. Two need no simulation
-at all: a robot whose instructions contain no `F` cannot have moved, and since
-a loss scents the cell it happened on and a scented cell blocks the next
-departure, no two robots can ever report a loss on the same cell.
-
-The counts are the point of the display. A predicate that never evaluates
-reads exactly like one that always holds, so the suite prints how many
-missions each one actually judged, and missions are drawn with degenerate
-instruction shapes on purpose — a uniformly random instruction string is
-all-`F` about once in 3^n, so without the bias the strongest predicates would
-almost never fire. `--properties <n>` sets the corpus size.
-
-Every invariant is also asked of the reference implementation itself over a
-drawn corpus, not only of a candidate. The differential mode's verdict and the
-shrinker's predicate both rest on that implementation being right, and the hand
-examples behind it are thin for that load — a scent recorded one cell ahead of
-where the robot stood passes all of them and violates an invariant on the
-second draw.
-
-Half the corpus arrives respelled rather than canonical. A mission is the same
-mission however its whitespace is written, so every predicate holds over a
-respelling too, and two of them are questions the spelling mode never asks of
-one: whether an unusual spelling is answered the same way twice, and whether
-appending a robot written that way disturbs the robots before it.
-
-Missions are also drawn crowded. Most carry a robot or two, but the tail of the
-draw reaches a dozen or more, because three robots in the right order say
-nothing about the ninth — and a program that answers from a map keyed by
-position, or sorts before printing, agrees with everything until there is
-enough to disagree about.
-
-## Generated rejections
-
-The last mode breaks valid missions on purpose, usually one way at a time: a
-coordinate past a limit, a start off the world, a letter outside a vocabulary,
-a token too many or too few, a line removed or inserted, bytes that are not
-text, two independent problems on two robots, and a character the
-grammar does not admit as whitespace — that last one across every line type and
-every position a space would have been legal, including hidden inside an
-otherwise-legal run of spaces, which is where a reader that trims and splits
-blames the innocent space beside the offender.
-
-Two of those families are stated as principles rather than lists, because a
-list is a thing somebody has to remember to extend and a hand-picked one leaves
-exactly the characters nobody thought of. The injected whitespace is everything
-Unicode calls whitespace — which is what `char::is_whitespace` reports — plus
-the ASCII information separators and the byte-order mark, minus whatever the
-grammar admits; a reader that folded only the eight characters an earlier
-hand-picked pool held passed every gate in this suite. The malformed bytes come
-from a taxonomy of how decoders fail: overlong encodings, UTF-16 surrogates,
-code points past the last one, truncations at each length, and bytes a Latin-1
-decoder reads as letters. The overlong encoding is the one that matters — a
-decoder that reads `C0 A0` as a space turns input the contract refuses into a
-mission it answers, and the answer looks entirely reasonable.
-
-R25 asks for every violation found in one pass, so one family breaks two robots
-at once with two different rulings governing, and a diagnostic is held to a tag
-per violation rather than one shared between them. Collecting every error in one
-pass is the hardest thing in a parser: a program that is otherwise perfect and
-reports only its first problem passes every single-defect case in the suite.
+This generator breaks valid missions on purpose: a coordinate past a limit, a start off the world, a letter outside a vocabulary, a token too many or too few, a line removed or inserted, bytes that are not text, two independent problems on two robots, and a character the grammar does not admit as whitespace.
 
 ```
 rejections: <n> of <n> attempted, seed <n>, <n> failure(s)
 ```
 
-Two things make this more than a fuzzer. The expected line and the admissible
-rulings are derived from *how the mutation was built*, never from what the
-program said, so a program cannot teach the suite to accept its own answer.
-And the diagnostic is judged, not just the exit code — a mode that checked
-only for a non-zero exit and an empty stdout would let a program reject in
-silence over a much larger space than any catalogue.
+The expected line and the admissible rulings come from how the mutation was built rather than from what the implementation said, so an implementation cannot teach the suite to accept its own answer. Every mutation is checked against the published grammar to be genuinely invalid before it is used.
 
-Each mutation is checked to be genuinely invalid before it is used. A mutation
-that quietly left a valid mission behind would turn a rejection test into a
-much weaker success test that still reported green. `--rejections <n>` sets
-how many to attempt.
+### Differential
 
-## Differential
-
-Last, the suite compares answers with a second implementation written from the
-same contract:
+This generator compares answers with a second implementation written from the same contract:
 
 ```
 differential: <n> mission(s), seed <n>, <n> disagreement(s)
 ```
-
-This is the only mode that catches a plainly wrong answer to a mixed
-instruction string. A robot that ends one cell east of where it belongs agrees
-with itself across every respelling and satisfies every invariant; nothing
-short of another implementation notices.
-
-The first disagreement in a run is reduced before it is reported: the suite
-runs the program again against smaller and smaller missions, keeping the
-smallest that still disagrees. A drawn failure is a dozen robots and several
-hundred bytes, which reproduces the bug and explains nothing; a reduced one is
-usually one robot on a small world, where the difference is the whole input.
-Only the first is reduced, because each candidate costs a process and the rest
-of the list is there to say how widespread the problem is.
-
-What it proves is **agreement**, and the difference matters. A disagreement is
-a defect in the program under test, or a place where the contract admits two
-readings and the two sides took different ones — both are findings, and
-neither side is automatically the wrong one. The reference is checked against
-the one piece of external truth available: the brief's own published sample,
-input and output, written by somebody who wrote neither implementation.
 
 | Exit code | Meaning |
 |---|---|
 | 0 | the implementation conforms |
 | 1 | the implementation does not conform |
 | 2 | the suite could not run: bad arguments, no such implementation, or an incoherent contract |
-
-## What a case may assume
-
-A case cites the rulings it enforces, and a test refuses a citation to a
-question that does not exist or is still open — `status = "open"` means no case
-may depend on it, in either direction.
-
-Judgement asks for exactly what the contract fixes and nothing more: output is
-byte-exact and stderr is ignored on success (Q2); a rejection must produce no
-stdout and some diagnostic, with any non-zero exit; a diagnostic must name its
-line where one is attributable and must not name one where none is; help output
-must exist, and no ruling constrains its wording, so neither does the suite.
-
-## What a seed names
-
-A seed is a replay handle: a divergence prints one, and the same seed brings
-the same inputs back. That holds only while the generators stand still, so
-`tests/corpus.rs` writes down what one seed names — a readable descriptor per
-item, and a digest over the exact bytes to catch what a descriptor elides.
-
-Improving a generator is expected to fail those tests. The diff is the point:
-it makes replacing the meaning of every seed something somebody reviewed,
-rather than something that happened while nobody was looking.
-
-## The control
-
-`src/bin/probe.rs` is a program built to conform, and the suite is pointed at
-it by its own tests. Every other fixture is wrong on purpose and proves a check
-can go red; this one is right on purpose and proves the checks are not red for
-a program that has done nothing wrong.
-
-`--timeout <s>` sets how long one run may take. Q3 leaves a hang to grader
-policy, which is why it is policy on a flag rather than a constant in the
-source: a loaded runner should not read as a conformance failure.
-
-It is deliberately eccentric everywhere the contract is silent — it exits 7
-rather than 1, writes its diagnostics with the ruling first and the line last,
-never says the word "usage", and reports its version in a sentence. A case that
-fails the probe has pinned something the contract left free, which is the one
-failure a suite cannot see from inside: over-pinning looks exactly like a
-thorough gate until somebody tries to satisfy it.
-
-It parses and diagnoses; the simulation is the suite's own reference, because a
-third simulator would be a third chance to be wrong about the same section.
-
-`src/bin/misbehave.rs` is the other half of that argument: a gallery of programs
-wrong in exactly one way about the scent rule — a scent that remembers a
-heading, one spent on the robot it saves, one looked up only where a robot was
-placed, a blocked move that ends the run, a lost robot that keeps going, a world with
-an upper edge and no lower one — plus readers wrong about bytes rather than
-about scent. The tests assert which cases each one fails, both ways round, and
-the case list is read out of the catalogue rather than written down, so a new
-case in a covered group fails the tests until something is shown to fail it.
-That obligation earns its keep: it fired on the first case added after it, and
-the misreading it demanded turned out to fail three older cases too — three
-scent cases that placed a robot on an edge at zero, none of which was testing
-quite what it looked like. A case no wrong
-program fails has never been shown to do anything, and a case that fails a
-program it was not written for is pinning more than it claims.
-
-## Scope
-
-The command-line surface only: text on stdin, text on stdout, diagnostics on
-stderr, an exit code.

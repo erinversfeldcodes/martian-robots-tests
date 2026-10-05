@@ -290,7 +290,7 @@ fn catalogue(
 }
 
 /// The generated modes, which reach what an enumerated catalogue cannot.
-/// A mode that was asked to run and judged nothing did not pass — it did not
+/// Anything that was asked to run and judged nothing did not pass — it did not
 /// report. Printing `0 of 1 attempted … 0 failure(s)` and exiting 0 is the
 /// shape of every silently empty test suite there has ever been, and it is the
 /// one place this suite was not applying to itself the rule it applies to a
@@ -299,7 +299,7 @@ fn catalogue(
 fn judged(what: &str, judgements: usize, requested: u32, advice: &str) -> Result<(), String> {
     if requested > 0 && judgements == 0 {
         return Err(format!(
-            "the {what} mode was asked for {requested} and judged nothing: {advice}"
+            "the {what} generator was asked for {requested} and judged nothing: {advice}"
         ));
     }
     Ok(())
