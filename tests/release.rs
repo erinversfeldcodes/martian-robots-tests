@@ -74,22 +74,32 @@ fn every_tag_the_readme_shows_is_the_version_in_the_tree() {
         .join("\n");
 
     let mut found = 0;
-    let mut rest = fenced.as_str();
-    while let Some(at) = rest.find("--tag v") {
-        let shown: String = rest[at + "--tag ".len()..]
-            .chars()
-            .take_while(|character| !character.is_whitespace())
-            .collect();
-        assert_eq!(
-            shown, wanted,
-            "the README installs {shown}, and this tree is {wanted}"
-        );
-        found += 1;
-        rest = &rest[at + "--tag v".len()..];
+    for marker in ["--tag v", "tag = \"v"] {
+        found += tags_match(&fenced, marker, &wanted);
     }
 
     assert!(
         found > 0,
         "the README shows no tag to install, so this test is watching nothing"
     );
+}
+
+/// Every tag spelled with `marker` inside fenced blocks must be `wanted`.
+fn tags_match(fenced: &str, marker: &str, wanted: &str) -> usize {
+    let mut found = 0;
+    let mut rest = fenced;
+    while let Some(at) = rest.find(marker) {
+        let from = at + marker.len() - 1;
+        let shown: String = rest[from..]
+            .chars()
+            .take_while(|character| character.is_ascii_alphanumeric() || *character == '.')
+            .collect();
+        assert_eq!(
+            shown, wanted,
+            "the README names {shown}, and this tree is {wanted}"
+        );
+        found += 1;
+        rest = &rest[at + marker.len()..];
+    }
+    found
 }

@@ -33,8 +33,22 @@ Releases are tagged and can be pinned:
 
 ```
 cargo install --git https://github.com/erinversfeldcodes/martian-robots-tests \
-  --tag v2.1.0 --locked
+  --tag v2.1.0 --locked --bin martian-robots-verify
 martian-robots-verify --version
+```
+
+`--bin` matters: the crate also builds `probe` and `misbehave`, which are implementations written to conform and to be wrong in one specific way, and neither belongs on the PATH of somebody writing their own.
+
+An implementation can derive its own constants from the contract rather than restating them, which is the point of defining the limits once. The contract travels inside the crate, so a build dependency on a pinned tag gives an implementation exactly the limits, grammar and vocabularies the suite will grade it against:
+
+```
+[build-dependencies]
+martian-robots-verify = { git = "https://github.com/erinversfeldcodes/martian-robots-tests", tag = "v2.1.0" }
+```
+
+```rust
+let contract = martian_robots_verify::contract::Contract::load()?;
+// contract.limits.max_coordinate, contract.grammar.instructions, ...
 ```
 
 There is one version shared by both the contract and the suite as they're a single artefact. The major and minor versions are what conformance ultimately depends on, and they move by the policy in §2.7 of the contract: a change to what input is accepted or what output it produces is major, settling an open question is typically minor. The patch counts releases of the suite: a case added, a generator widened, or some other issue resolved. None of those change what conforms, only what is caught, so an implementation that was right before a patch is still right after it — which is why R26 asks a program to report the major and minor rather than the whole string.
