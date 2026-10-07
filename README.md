@@ -36,7 +36,7 @@ Releases are tagged and can be pinned:
 
 ```
 cargo install --git https://github.com/erinversfeldcodes/martian-robots-tests \
-  --tag v2.1.0 --locked --bin martian-robots-verify
+  --tag v2.2.0 --locked --bin martian-robots-verify
 martian-robots-verify --version
 ```
 
@@ -46,7 +46,7 @@ An implementation can derive its own constants from the contract rather than res
 
 ```
 [build-dependencies]
-martian-robots-verify = { git = "https://github.com/erinversfeldcodes/martian-robots-tests", tag = "v2.1.0" }
+martian-robots-verify = { git = "https://github.com/erinversfeldcodes/martian-robots-tests", tag = "v2.2.0" }
 ```
 
 ```rust

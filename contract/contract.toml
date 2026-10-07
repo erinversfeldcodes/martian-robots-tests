@@ -8,7 +8,7 @@
 # produces, is a major bump; settling an open question without changing any
 # conforming implementation's answer is a minor one; the patch counts releases
 # of the suite that enforces this contract.
-version = "2.1.0"
+version = "2.2.0"
 
 [limits]
 max_coordinate = 50
