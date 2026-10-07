@@ -871,7 +871,7 @@ mod tests {
                         panic!("{} cites {id}, which is not in the contract", case.name)
                     });
                 assert!(
-                    matches!(ruling.decision, Decision::Ruled { .. }),
+                    matches!(ruling.decision, Some(Decision::Ruled(_))),
                     "{} cites {id}, which is an open question and may not be tested",
                     case.name
                 );

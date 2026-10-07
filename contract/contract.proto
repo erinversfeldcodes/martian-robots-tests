@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+// The contract, as a schema.
+//
+// This file says what a contract *is*. `contract.toml` says what this
+// contract's values *are*, and is authored by hand because the rulings are
+// prose that people read and argue over in diffs. The Rust types the suite
+// uses are generated from this file, so the shape is stated once and the
+// suite cannot disagree with it.
+//
+// Everything a consumer needs is here: another implementation, in any language
+// protoc targets, generates its own types from this same file.
+package martian_robots.contract;
+
+message Contract {
+  // Semver. Major and minor are what conformance depends on; the patch counts
+  // releases of the suite that enforces this contract.
+  string version = 1;
+
+  Limits limits = 2;
+  Grammar grammar = 3;
+
+  // Every question the problem statement leaves open, ruled or deliberately
+  // open. Ordered: the document renders them in this sequence.
+  repeated Ruling rulings = 4;
+}
+
+// The numeric facts. Not expressible in the grammar, which is why they are
+// here and why the suite's boundary cases read them from this file.
+message Limits {
+  uint32 max_coordinate = 1;
+  uint32 max_instructions = 2;
+}
+
+// The input grammar, as productions rather than as text. The EBNF a reader
+// sees is rendered from this, so the terminals the suite injects and the
+// grammar the contract publishes are the same facts.
+message Grammar {
+  // Prose that the productions cannot carry: the framing rules, and what
+  // lives in Limits instead.
+  string note = 1;
+  repeated Production productions = 2;
+}
+
+message Production {
+  string name = 1;
+
+  // A terminal production: an alternation of literals, as in
+  // `orientation = "N" | "S" | "E" | "W" ;`. Exactly one of this and `terms`
+  // is set.
+  repeated string literals = 2;
+
+  // A composite production: a concatenation of other productions, as in
+  // `number = digit , { digit } ;`.
+  repeated Term terms = 3;
+
+  // The trailing `(* ... *)` a reader sees, if any.
+  string comment = 4;
+}
+
+message Term {
+  // The production this term refers to.
+  string name = 1;
+
+  // `{ name }` — zero or more.
+  bool is_repeated = 2;
+
+  // `[ name ]` — zero or one.
+  bool is_optional = 3;
+}
+
+message Ruling {
+  // `R`-numbered when ruled, `Q`-numbered when open.
+  string id = 1;
+
+  string question = 2;
+
+  // Ruled or open, never both and never neither. The schema makes "both"
+  // impossible; "neither" stays a check, because a proto3 oneof is optional.
+  oneof decision {
+    Ruled ruled = 3;
+    Open open = 4;
+  }
+}
+
+// An answer that is contract: an implementation that disagrees is wrong, and a
+// case is expected to pin it.
+message Ruled {
+  string ruling = 1;
+  string rationale = 2;
+}
+
+// Deliberately undecided: no case may test it, and an implementation may
+// answer it however it likes.
+message Open {
+  string note = 1;
+}
