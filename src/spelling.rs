@@ -261,7 +261,7 @@ pub fn permitted(rendered: &[u8]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{Spelling, permitted, render};
-    use crate::contract::{Contract, Grammar};
+    use crate::contract::{Contract, Grammar, Production};
     use crate::mission::Mission;
     use crate::rng::Rng;
 
@@ -317,12 +317,22 @@ mod tests {
         // The proof that the pools are derived and not typed: narrow `ws` to
         // spaces alone and no rendering contains a tab, with nothing in this
         // module edited.
-        let grammar = Grammar {
-            separators: vec![' '],
-            line_endings: vec!["\n".to_string()],
-            orientations: vec!['N', 'E', 'S', 'W'],
-            instructions: vec!['L', 'R', 'F'],
+        let terminal = |name: &str, literals: &[&str]| Production {
+            name: name.to_string(),
+            literals: literals.iter().map(ToString::to_string).collect(),
+            terms: Vec::new(),
+            comment: String::new(),
         };
+        let grammar = Grammar::project(
+            String::new(),
+            vec![
+                terminal("separator", &[" "]),
+                terminal("eol", &["\n"]),
+                terminal("orientation", &["N", "E", "S", "W"]),
+                terminal("instruction", &["L", "R", "F"]),
+            ],
+        )
+        .unwrap();
         let mut rng = Rng::from_seed(21);
         for _ in 0..200 {
             let mission = Mission::draw(&mut rng, &contract);

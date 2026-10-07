@@ -1,11 +1,15 @@
 name: release
 
-# A tag is the only thing a consumer pins, so a tag has to mean something. This
-# workflow refuses one that disagrees with the version in the tree, and refuses
-# to publish a release the suite itself cannot pass.
+# Releasing happens on merge, not on a tag somebody remembers to push.
+#
+# This is one workflow rather than two because a tag pushed with the default
+# token does not trigger another workflow run: a "bump and tag" job feeding a
+# "publish on tag" job would compute a version, push the tag, and then publish
+# nothing at all. So the whole release happens here, and the guard against
+# re-triggering itself is that it does nothing when HEAD already carries a tag.
 on:
   push:
-    tags: ['v*']
+    branches: [main]
 
 permissions:
   contents: write
@@ -18,65 +22,106 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      # Full history and tags: the version is computed from the last release,
+      # and deciding whether the contract broke anything means building the
+      # last release's conforming program.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
 
       - name: Install the pinned toolchain
         run: rustup toolchain install
 
-      # The tag, Cargo.toml and contract/limits.toml must be the same number.
-      # A test in the tree holds the last two equal; nothing but this can hold
-      # the tag to them, and a tag that lies is worse than no tag at all. The
-      # binary is asked rather than the manifest, so what is checked is the
-      # artefact somebody will install.
-      - name: The tag is the version
+      # §2.7's rules, not conventional commits': a `feat:` that adds a case is
+      # a patch here, because the patch component counts releases of the suite.
+      # See tools/next-version.sh for how major is told from minor.
+      - name: What this release is
+        id: version
         run: |
-          tagged="${GITHUB_REF_NAME#v}"
-          built=$(cargo run --quiet -- --version | awk '{ print $2 }')
-          if [ "$tagged" != "$built" ]; then
-            echo "tag $GITHUB_REF_NAME names $tagged; this builds $built" >&2
-            exit 1
+          read -r version kind <<<"$(./tools/next-version.sh)"
+          if [ -z "$version" ]; then
+            echo "HEAD is already released; nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          echo "Releasing $version, a $kind bump."
 
       - name: Formatted
+        if: steps.version.outputs.skip != 'true'
         run: cargo fmt --all --check
 
       - name: Linted, warnings denied
+        if: steps.version.outputs.skip != 'true'
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Tested, including the suite graded against broken implementations
+        if: steps.version.outputs.skip != 'true'
         run: cargo test --quiet
 
+      # Writes the version into every place that states it, and refuses a
+      # contract change whose revision history says nothing about why.
+      - name: Record the version
+        if: steps.version.outputs.skip != 'true'
+        run: ./tools/apply-version.sh "${{ steps.version.outputs.version }}" "${{ steps.version.outputs.kind }}"
+
+      # Everything above ran before the version moved, so this proves the tree
+      # that is about to be tagged is the tree that was tested.
+      - name: Still formatted, linted and tested at the new version
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          cargo fmt --all --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test --quiet
+          test "$(cargo run --quiet -- --version | awk '{ print $2 }')" = "${{ steps.version.outputs.version }}"
+
       # Generated, never committed: a rendering in the tree is a second copy of
-      # the truth that can be edited and can go stale. A release is the right
-      # home for one, because a release cannot be edited.
+      # the truth that can be edited and can go stale. A release cannot be
+      # edited, so it is the right home for one.
       - name: Render the contract
+        if: steps.version.outputs.skip != 'true'
         run: cargo run --quiet -- --contract > CONTRACT.md
 
       - name: Publish
+        if: steps.version.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          KIND: ${{ steps.version.outputs.kind }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock contract/contract.toml contract/template.md README.md
+          git commit -m "chore(release): v$VERSION"
+          git tag "v$VERSION"
+          git push origin HEAD:main "v$VERSION"
+
           cat > NOTES.md <<NOTES
-          Contract $version, and the suite that enforces it. They are one
-          artifact and carry one version: the major and minor say what conforms,
-          and the patch counts releases of the suite, so closing a false green
-          cannot unconform an implementation that was already right.
+          Contract $VERSION, and the suite that enforces it. They are one
+          artifact and carry one version: the major is what conformance depends
+          on, and every other component moves without changing what conforms,
+          so an implementation reporting major $(echo "$VERSION" | cut -d. -f1)
+          is reporting what R26 asks for.
+
+          This is a **$KIND** release by §2.7's own rules.
 
           Install it:
 
               cargo install --git ${{ github.server_url }}/${{ github.repository }} \\
-                --tag $GITHUB_REF_NAME --locked
+                --tag v$VERSION --locked --bin martian-robots-verify
 
           Run it against an implementation:
 
               martian-robots-verify --bin /path/to/martian-robots
 
+          Derive an implementation's constants from the same release:
+
+              [build-dependencies]
+              martian-robots-verify = { git = "${{ github.server_url }}/${{ github.repository }}", tag = "v$VERSION" }
+
           \`CONTRACT.md\` below is rendered from \`contract/\` at this tag. It is
           not in the tree, because a generated file in a repository is a second
           copy of the truth.
           NOTES
-          gh release create "$GITHUB_REF_NAME" \
-            --title "$GITHUB_REF_NAME" \
-            --notes-file NOTES.md \
-            CONTRACT.md
+          gh release create "v$VERSION" --title "v$VERSION" --notes-file NOTES.md CONTRACT.md

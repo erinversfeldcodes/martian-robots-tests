@@ -6,16 +6,19 @@ This project contains the data contract and schema for the Martian Robots applic
 
 For any project the problem statement is the human-understandble and human-created description of the problem we want to design solutions for. It is a combination of clear requirements and ambiguous statements that either need clarification through continued investigation and questions or definitive rulings on. Humans navigate problem statements naturally and with intuition, but dependable code generation requires translating these into contracts that can grow, change and track our decisions.
 
-`contract/` contains this contract as code:
+`contract/` contains this contract as code, split by what each file is for:
 
 | File | What it holds |
 |---|---|
-| `limits.toml` | the version, and the numbers the problem statement gives us |
-| `rulings.toml` | every question the problem statement leaves open, ruled or deliberately open |
-| `grammar.ebnf` | the input grammar: the generators read their separators, line endings and vocabularies from it |
+| `contract.proto` | the schema: what a contract *is*. The Rust types the suite uses are generated from it |
+| `contract.toml` | this contract's values: the version, the limits, the grammar's productions, and every question the problem statement leaves open |
 | `template.md` | the narrative, with holes where the facts go |
 
-There is a clean separation of responsibilities between these files without duplication. The limits are defined once and read everywhere, being used to generate documentation, test suite boundary cases and implementations that derive constants from them. Similarly, generators using `grammar.ebnf` cannot drift from the published grammar, and the characters it does not admit are injected by the rejection generator. To read the contract as a single, coherent document:
+The schema is the shape and the instance is the content, so neither restates the other. Nothing hand-writes the contract's Rust types: `build.rs` compiles the schema with `protox` and generates them with `prost-build`, which means a field added to the schema appears in the suite without anybody writing it twice, and a field removed stops compiling. A consumer in any language `protoc` targets generates its own types from the same schema.
+
+The instance stays TOML and stays authored by hand, because the rulings are prose that people read and argue over in diffs, and no binary or comment-free format supports that. The schema is what makes a misspelled key an error instead of a silently missing value.
+
+The limits are defined once and read everywhere: by the document, by the suite's boundary cases, and by an implementation that derives its constants from them. The grammar is productions rather than text, so the EBNF a reader sees is rendered from the same data the generators draw their terminals from — there is no grammar file to keep in step, and the characters the grammar does not admit are exactly what the rejection generator injects. To read the contract as a single, coherent document:
 
 ```
 cargo run --quiet -- --contract

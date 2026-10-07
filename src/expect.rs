@@ -255,9 +255,10 @@ fn code_of(seen: &Observation) -> String {
 /// Whether `said` reports `wanted` as a version rather than as a substring.
 ///
 /// The same trap as a line reference: a plain `contains` lets `2.10` answer a
-/// demand for `2.1`, and `12.1` answer one for `2.1`. So the match has to sit
-/// on a boundary — no digit or dot before it, no digit immediately after — and
-/// a patch component may follow, because reporting `2.1.3` reports `2.1`.
+/// demand for `2`, and the `2` in `3.2.1` answer one for `2`. So the match has
+/// to sit on a boundary — no digit or dot before it, no digit immediately
+/// after — and further components may follow, because reporting `2.1.3`
+/// reports `2`.
 fn reports_version(said: &str, wanted: &str) -> bool {
     said.match_indices(wanted).any(|(at, _)| {
         let before = said[..at].chars().next_back();
@@ -434,11 +435,11 @@ mod tests {
 
     #[test]
     fn a_version_must_actually_name_the_version() {
-        let expect = Expect::Version("2.1".to_string());
+        let expect = Expect::Version("2".to_string());
         assert!(
             expect
                 .judge(&seen(
-                    b"martian-robots 2.1.0 (contract 2.1)\n",
+                    b"martian-robots 2.1.0 (contract 2)\n",
                     b"",
                     Ending::Code(0)
                 ))
@@ -461,20 +462,21 @@ mod tests {
             expect
                 .judge(&seen(b"2.1.7\n", b"", Ending::Code(0)))
                 .is_none(),
-            "text containing 2.1.7 contains 2.1"
+            "text containing 2.1.7 contains 2"
         );
+        // A major of 2 is reported by `2`, `2.1` and `2.1.7` alike. These are
+        // the near misses a plain substring search would accept.
         for pretending in [
-            &b"2.10\n"[..],
-            &b"2.10.4\n"[..],
+            &b"21\n"[..],
             &b"12.1\n"[..],
-            &b"12.1.0\n"[..],
             &b"1.2.1\n"[..],
+            &b"3.2.0\n"[..],
         ] {
             assert!(
                 expect
                     .judge(&seen(pretending, b"", Ending::Code(0)))
                     .is_some(),
-                "{:?} is not 2.1",
+                "{:?} does not report major version 2",
                 String::from_utf8_lossy(pretending)
             );
         }

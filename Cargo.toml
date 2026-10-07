@@ -25,8 +25,19 @@ path = "src/main.rs"
 # and a dependency here would have to earn its place by making the grading
 # better rather than the code shorter.
 [dependencies]
+# The contract's Rust types are generated from contract.proto, so prost is
+# here to carry them. serde reads the authored instance into those types; toml
+# is the format the instance is authored in, because the rulings are prose that
+# people read in diffs and no binary or comment-free format supports that.
+prost = "0.14"
 serde = { version = "1", features = ["derive"] }
 toml = "0.9"
+
+# protox compiles the schema in pure Rust, so no protoc has to be installed to
+# build this, and prost-build turns the result into the types above.
+[build-dependencies]
+prost-build = "0.14"
+protox = "0.9"
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }

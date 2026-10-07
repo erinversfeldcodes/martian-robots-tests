@@ -1,221 +1,358 @@
-# Every question the brief leaves open and what was decided.
+# The contract's values. Its shape is contract.proto, and the Rust types the
+# suite uses are generated from that file; nothing here restates a type.
 #
-# `status = "ruled"` means the answer is contract and ready for
-# implementation in tests and in features.
-# `status = "open"` means it is undecided: a suite may not test it, an
-# implementation may experimentally answer it however it likes.
-#
-# Ruled questions are R-numbered and cited by the cases that enforce them.
-# Open questions are Q-numbered and cited by nothing.
+# Authored by hand on purpose: the rulings are prose that people read and
+# argue over in diffs, which no binary or comment-free format supports.
 
-[[ruling]]
+# Semver: a change to what input is accepted, or to what output a given input
+# produces, is a major bump; settling an open question without changing any
+# conforming implementation's answer is a minor one; the patch counts releases
+# of the suite that enforces this contract.
+version = "2.1.0"
+
+[limits]
+max_coordinate = 50
+max_instructions = 99
+
+[grammar]
+note = '''
+The input grammar.
+
+The conformance suite reads it to build the inputs it grades with, so a
+generator that has drifted from the grammar is a generator that fails to
+parse its own specification rather than one that quietly tests something
+else.
+
+Numeric bounds are not expressible here and live in limits.toml: each
+`number` is at most max_coordinate (R5), and an instruction-line carries at
+most max_instructions instructions (R6). Robot start positions must lie on
+the grid (R1), which is a relation between lines rather than a production.
+
+Framing rules the productions below cannot express on their own:
+
+  - The line immediately following a position-line is always that robot's
+    instruction-line, even when blank (R2, R4). Without this, a blank line
+    meaning "no instructions" and a blank line meaning "block separator"
+    would be indistinguishable.
+  - The final eol may be omitted: end-of-file acts as an implicit
+    end-of-line, but only for a non-empty, unterminated final line (R14,
+    R18).
+  - A bare CR at end of input completes to CRLF, but only when it
+    terminates a non-empty line; a CR not followed by LF anywhere else is
+    invalid (R19).
+
+Implicit endings never create content. Neither the implicit eol nor
+CR-completion may manufacture a line that was not visibly present.
+'''
+
+[[grammar.productions]]
+name = "input"
+terms = [
+  { name = "blank-line", is_repeated = true },
+  { name = "grid-line" },
+  { name = "blank-line", is_repeated = true },
+  { name = "robot-block", is_repeated = true },
+]
+
+[[grammar.productions]]
+name = "blank-line"
+terms = [
+  { name = "ows" },
+  { name = "eol" },
+]
+
+[[grammar.productions]]
+name = "grid-line"
+terms = [
+  { name = "ows" },
+  { name = "number" },
+  { name = "ws" },
+  { name = "number" },
+  { name = "ows" },
+  { name = "eol" },
+]
+
+[[grammar.productions]]
+name = "robot-block"
+terms = [
+  { name = "position-line" },
+  { name = "instruction-line" },
+  { name = "blank-line", is_repeated = true },
+]
+
+[[grammar.productions]]
+name = "position-line"
+terms = [
+  { name = "ows" },
+  { name = "number" },
+  { name = "ws" },
+  { name = "number" },
+  { name = "ws" },
+  { name = "orientation" },
+  { name = "ows" },
+  { name = "eol" },
+]
+
+[[grammar.productions]]
+name = "instruction-line"
+terms = [
+  { name = "ows" },
+  { name = "instruction", is_repeated = true },
+  { name = "ows" },
+  { name = "eol" },
+]
+
+[[grammar.productions]]
+name = "orientation"
+literals = ["N", "S", "E", "W"]
+
+[[grammar.productions]]
+name = "instruction"
+literals = ["L", "R", "F"]
+
+[[grammar.productions]]
+name = "number"
+terms = [
+  { name = "digit" },
+  { name = "digit", is_repeated = true },
+]
+comment = "no sign, no leading +"
+
+[[grammar.productions]]
+name = "digit"
+literals = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
+
+[[grammar.productions]]
+name = "separator"
+literals = [" ", "\t"]
+comment = "spaces and tabs only"
+
+[[grammar.productions]]
+name = "ws"
+terms = [
+  { name = "separator" },
+  { name = "separator", is_repeated = true },
+]
+comment = "a run of one or more"
+
+[[grammar.productions]]
+name = "ows"
+terms = [
+  { name = "ws", is_optional = true },
+]
+
+[[grammar.productions]]
+name = "eol"
+literals = ["\n", "\r\n"]
+
+[[rulings]]
 id = "R1"
-status = "ruled"
 question = "Robot's initial position off-grid?"
+[rulings.decision.ruled]
 ruling = "Invalid input."
 rationale = "Validation happens at the boundary; the simulation never sees an off-grid robot."
 
-[[ruling]]
+[[rulings]]
 id = "R2"
-status = "ruled"
 question = "Empty instruction line?"
+[rulings.decision.ruled]
 ruling = "Valid: zero instructions."
 rationale = "The robot reports its initial state."
 
-[[ruling]]
+[[rulings]]
 id = "R3"
-status = "ruled"
 question = "Grid line `0 0`?"
+[rulings.decision.ruled]
 ruling = "Valid: a 1x1 world consisting of cell (0,0)."
 
-[[ruling]]
+[[rulings]]
 id = "R4"
-status = "ruled"
 question = "Whitespace tolerance?"
+[rulings.decision.ruled]
 ruling = "Runs of spaces and tabs separate tokens; leading and trailing spaces and tabs on a line are ignored; blank lines between robot blocks are ignored. Spaces and tabs are the only whitespace this contract has - they are what `ws` admits in grammar.ebnf - so any other character is not whitespace here, and a line carrying one does not match its production."
 rationale = "The brief's own sample input contains blank lines between blocks. The third clause is stated rather than left to the grammar because a reader who takes \"whitespace\" at its ordinary meaning would admit a no-break space at a line edge while refusing it between tokens, which is not a coherent reading of anything."
 
-[[ruling]]
+[[rulings]]
 id = "R5"
-status = "ruled"
 question = "Coordinate greater than the maximum, in the grid line or a position line?"
+[rulings.decision.ruled]
 ruling = "Invalid input."
 
-[[ruling]]
+[[rulings]]
 id = "R6"
-status = "ruled"
 question = "Instruction string longer than the maximum?"
+[rulings.decision.ruled]
 ruling = "Invalid input."
 rationale = "The brief says instruction strings are less than 100 characters, so 99 is the longest valid one."
 
-[[ruling]]
+[[rulings]]
 id = "R7"
-status = "ruled"
 question = "Characters outside `L R F` in an instruction string, or outside `N S E W` as an orientation?"
+[rulings.decision.ruled]
 ruling = "Invalid input, lowercase included."
 rationale = "The vocabulary is strict-uppercase until a future command type says otherwise."
 
-[[ruling]]
+[[rulings]]
 id = "R8"
-status = "ruled"
 question = "Zero robots - a grid line and nothing else?"
+[rulings.decision.ruled]
 ruling = "Valid: empty stdout, exit 0."
 
-[[ruling]]
+[[rulings]]
 id = "R9"
-status = "ruled"
 question = "Scent: cell-based or direction-based? May a robot at a scented corner cell fall off a *different* edge than the robot that scented it?"
+[rulings.decision.ruled]
 ruling = "Cell-based: any `F` that would leave the world from a scented cell is ignored, whatever the direction."
 rationale = "The brief says a scent prohibits future robots from dropping off the world at the same grid *point*, which names a point, not a heading. The brief's own sample cannot distinguish the two readings - the ignored move in the third robot's run happens to face the same way the second robot was lost - so a direction-based implementation passes the published example and fails at a corner."
 
-[[ruling]]
+[[rulings]]
 id = "R10"
-status = "ruled"
 question = "Multiple robots lost from the same cell?"
+[rulings.decision.ruled]
 ruling = "Idempotent: the cell is scented once, and re-scenting has no additional effect."
 
-[[ruling]]
+[[rulings]]
 id = "R11"
-status = "ruled"
 question = "Line endings?"
+[rulings.decision.ruled]
 ruling = "Accept LF and CRLF on input; emit LF only."
 
-[[ruling]]
+[[rulings]]
 id = "R12"
-status = "ruled"
 question = "A line that does not match its production - a token too many, a token too few, or a token that is not what the production names?"
+[rulings.decision.ruled]
 ruling = "Invalid input: every line must match its production exactly, once runs of spaces and tabs are normalised. A surplus token (`1 1 E X`), a missing one (`1 1`), and a token of the wrong shape (`5x` where a number belongs) are all this ruling."
 rationale = "Stated as a rule about productions rather than about surplus tokens, because §2.5 only obliges a diagnostic to carry a tag where a numbered ruling governs. If this ruling covered only surplus tokens, a short line and a malformed number would be governed by nothing, and two implementations could disagree about whether a tag was owed at all."
 
-[[ruling]]
+[[rulings]]
 id = "R13"
-status = "ruled"
 question = "Missing instruction line after a position line - end of input mid-block?"
+[rulings.decision.ruled]
 ruling = "Invalid input."
 
-[[ruling]]
+[[rulings]]
 id = "R14"
-status = "ruled"
 question = "Input ends without a final newline?"
+[rulings.decision.ruled]
 ruling = "Valid: end-of-file acts as an implicit end-of-line."
 
-[[ruling]]
+[[rulings]]
 id = "R15"
-status = "ruled"
 question = "What is a blank line?"
+[rulings.decision.ruled]
 ruling = "`ows , eol` - a line containing only whitespace counts as blank."
 
-[[ruling]]
+[[rulings]]
 id = "R16"
-status = "ruled"
 question = "Leading zeros in input; number format on output?"
+[rulings.decision.ruled]
 ruling = "Input: grammatical, interpreted as a decimal value, so `05` is 5. Output: canonical decimal, no leading zeros, no signs."
 
-[[ruling]]
+[[rulings]]
 id = "R17"
-status = "ruled"
 question = "Blank lines before the grid line?"
+[rulings.decision.ruled]
 ruling = "Accepted and ignored, consistent with R4's liberal framing."
 
-[[ruling]]
+[[rulings]]
 id = "R18"
-status = "ruled"
 question = "Does R14's implicit end-of-line create a phantom blank line after a terminated final line?"
+[rulings.decision.ruled]
 ruling = "No: it applies only to a non-empty, unterminated final line."
 rationale = "A terminated input gains nothing, and R13 stands."
 
-[[ruling]]
+[[rulings]]
 id = "R19"
-status = "ruled"
 question = "A bare CR at the end of the input?"
+[rulings.decision.ruled]
 ruling = "Read as half a CRLF completed by the implicit end-of-line, but only when it terminates a non-empty line. A lone CR forming an empty line is invalid, as is a CR not followed by LF anywhere else."
 rationale = "Without the guard, one invisible byte turns an R13 rejection into an accepted mission by manufacturing an empty instruction line, which R18 forbids."
 
-[[ruling]]
+[[rulings]]
 id = "R20"
-status = "ruled"
 question = "`--help`?"
+[rulings.decision.ruled]
 ruling = "A real help surface: `--help` or `-h` prints usage to stdout, exits 0, and leaves stdin unread."
 rationale = "Silently ignoring argv is not acceptable - it leaves `--help` hanging on a terminal waiting for input."
 
-[[ruling]]
+[[rulings]]
 id = "R21"
-status = "ruled"
 question = "Other arguments?"
+[rulings.decision.ruled]
 ruling = "Usage error: a brief message to stderr, a non-zero exit, no stdout, stdin unread."
 
-[[ruling]]
+[[rulings]]
 id = "R22"
-status = "ruled"
 question = "Non-UTF-8 stdin?"
+[rulings.decision.ruled]
 ruling = "Invalid input."
 rationale = "The contract's text is ASCII; bytes that are not valid UTF-8 cannot be contract input."
 
-[[ruling]]
+[[rulings]]
 id = "R23"
-status = "ruled"
 question = "What does scent do besides blocking world-leaving moves? Does a robot placed on a scented cell, or one that merely passes through, behave differently?"
+[rulings.decision.ruled]
 ruling = "Nothing else. Entering, crossing, or starting on a scented cell is unremarkable, and scent never rejects input."
 rationale = "Protection is by occupancy, not provenance: however a robot came to stand on a scented cell, its world-leaving `F` is ignored."
 
-[[ruling]]
+[[rulings]]
 id = "R24"
-status = "ruled"
 question = "`--help` or `-h` together with another argument?"
+[rulings.decision.ruled]
 ruling = "Usage error, per R21: a help flag prints help only when it is the sole argument."
 
-[[ruling]]
+[[rulings]]
 id = "R25"
-status = "ruled"
 question = "How many diagnostics must a rejection carry?"
+[rulings.decision.ruled]
 ruling = "Every violation found in one pass: each line that breaks a rule on its own is diagnosed, whatever is wrong with the other lines."
 rationale = "The unit is the line, so one diagnostic for an offending line satisfies this however many rules that line breaks. A violation that can only be judged against another, invalid line - an off-grid start measured against an unreadable grid line - need not be reported."
 
-[[ruling]]
+[[rulings]]
 id = "R26"
-status = "ruled"
 question = "How does an implementation report which contract version it implements?"
+[rulings.decision.ruled]
 ruling = "`--version`, as the sole argument, prints text containing the contract's major and minor version to stdout, exits 0, and reads no stdin. Given alongside any other argument it is a usage error, per R21."
 rationale = "§2.7 obliges an implementation to report its version, and before this ruling there was nowhere to report it: R21 made every argument but a help flag a usage error, so the obligation could not be satisfied by a conforming program. Only containing the version is pinned - the text around it is implementation-chosen, as help's is. The major and minor rather than the whole string, because the patch component counts releases of the suite that enforces this contract: a suite release that closes a false green changes what is detected and not what conforms, and an implementation that was right before it must still be right after. Reporting the patch as well satisfies this, since text containing 2.1.3 contains 2.1."
 
-[[ruling]]
+[[rulings]]
 id = "Q1"
-status = "open"
 question = "Mixed LF and CRLF within one input?"
+[rulings.decision.open]
 note = "R11 accepts both; whether a single input may use each on different lines is unstated."
 
-[[ruling]]
+[[rulings]]
 id = "Q2"
-status = "open"
 question = "Output on stderr for valid input?"
+[rulings.decision.open]
 note = "Nothing forbids it and nothing requires it. A suite should ignore stderr when the exit code is 0."
 
-[[ruling]]
+[[rulings]]
 id = "Q3"
-status = "open"
 question = "Crashes and hangs?"
+[rulings.decision.open]
 note = "How a grader treats a candidate that panics or never terminates is a policy for the grader, not an obligation of this contract."
 
-[[ruling]]
+[[rulings]]
 id = "Q4"
-status = "open"
 question = "An unterminated final line of only whitespace?"
+[rulings.decision.open]
 note = "R14's letter admits it - a non-empty final line gains an implicit end-of-line - while the principle that implicit endings never create content would refuse it. The two disagree: one trailing space can turn an R13 rejection into an accepted mission. R19's guard closed exactly this flip for a carriage return; this one is open."
 
-[[ruling]]
+[[rulings]]
 id = "Q5"
-status = "open"
 question = "Which ruling owns a token of the right count and the wrong width?"
+[rulings.decision.open]
 note = "A position line ending `1 1 EE` has three tokens, so R12's \"exactly x y orientation\" and R7's \"EE is not an orientation\" both fit. It is rejected either way; which ruling it cites is unstated."
 
-[[ruling]]
+[[rulings]]
 id = "Q6"
-status = "open"
 question = "How should a diagnostic characterise whitespace that is neither a space nor a tab?"
+[rulings.decision.open]
 note = "That such a line is invalid is R4, not an open question. What is open is the characterisation: a bad separator, or a character outside the vocabulary. R4 and R12 can each be read as governing wherever such a character appears, and R7 can where the line carries a vocabulary token for it to be read as part of - an instruction string or an orientation - which the grid line does not. §2.5 asks for one governing tag rather than a particular one, so any ruling that governs satisfies it."
 
-[[ruling]]
+[[rulings]]
 id = "Q7"
-status = "open"
 question = "Additional command types?"
+[rulings.decision.open]
 note = "The brief asks that provision be made for them. That is a structural obligation on the implementation - adding one should be a small, local change - and this contract deliberately does not speculate about their syntax."
