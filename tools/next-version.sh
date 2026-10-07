@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 #
-# The version the next release should carry, or nothing if HEAD is already
-# released.
+# The version the next release should carry and what kind of bump it is, as
+# `<version> <kind>`, or nothing if HEAD is already released.
+#
+# Both come from here so there is one statement of the rule. The workflow
+# computing the kind for itself from the two version strings is how that rule
+# gets two implementations, one of which is wrong.
 #
 # The bump is not derived from commit types, because this contract's own policy
 # in §2.7 does not use them: a `feat:` that adds a case is a *patch* here,
@@ -30,7 +34,7 @@ fi
 
 last=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
 if [ -z "$last" ]; then
-  grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2
+  echo "$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2) major"
   exit 0
 fi
 
@@ -43,9 +47,9 @@ bump() {
   local part=$1 major minor patch
   IFS=. read -r major minor patch <<<"$current"
   case "$part" in
-    major) echo "$((major + 1)).0.0" ;;
-    minor) echo "$major.$((minor + 1)).0" ;;
-    patch) echo "$major.$minor.$((patch + 1))" ;;
+    major) echo "$((major + 1)).0.0 major" ;;
+    minor) echo "$major.$((minor + 1)).0 minor" ;;
+    patch) echo "$major.$minor.$((patch + 1)) patch" ;;
   esac
 }
 
