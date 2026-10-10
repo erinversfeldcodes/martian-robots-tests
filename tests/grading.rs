@@ -273,12 +273,19 @@ fn an_implementation_that_answers_differently_each_run_is_caught() {
 #[test]
 fn every_invariant_is_evaluated_by_the_corpus_it_runs_against() {
     let fixtures = Fixtures::new("firing");
-    // Answers, and answers with a loss: several predicates say nothing about
-    // an implementation that reports nothing, and a corpus cannot evaluate
-    // "no two robots are lost on the same cell" against a program that never
-    // loses one.
-    let implementation =
-        fixtures.implementation("always-lost", "cat > /dev/null\nprintf '0 0 N LOST\\n'");
+    // A conforming program, because the question is whether the *corpus*
+    // reaches every predicate — and only a program that answers properly lets
+    // them all apply. A fixture that reports a loss for everything makes some
+    // of them fire and others impossible: a split run cannot continue past a
+    // loss, so the decomposition predicate would be inapplicable by
+    // construction rather than by the corpus being thin.
+    let implementation = fixtures.implementation(
+        "conforming",
+        &format!(
+            "exec {} \"$@\"",
+            Path::new(env!("CARGO_BIN_EXE_probe")).display()
+        ),
+    );
 
     let report = grade_with(
         &implementation,
@@ -1203,5 +1210,90 @@ fn a_decoder_that_accepts_an_overlong_encoding_is_caught() {
         "the taxonomy must catch it over a wider space than two hand cases \
          can:\n{}",
         generated.stdout
+    );
+}
+
+/// Which invariant catches which misreading of §2.2.
+///
+/// The near-miss gallery already asserts which *cases* each wrong program
+/// fails. This asserts the same of the *predicates*, and it is the test whose
+/// absence made removing the differential generator a guess: without it,
+/// "the oracle-free checks cover that class" was an argument rather than a
+/// measurement. A defect no predicate catches is a hole in the battery, and
+/// the only way to know is to make one and look.
+const SEMANTIC_DEFECTS: [(&str, &str); 7] = [
+    // Shifts a surviving robot when its instruction string is long and mixes
+    // turns with movement — the shape of a fixed buffer. Invisible to every
+    // single-answer predicate, because the two that constrain meaning exclude
+    // mixed strings. This is the one the decomposition predicate exists for.
+    (
+        "long-strings",
+        "running a robot's instructions in two halves ends where running them whole does",
+    ),
+    // A world with an upper edge and no lower one.
+    (
+        "no-lower-edge",
+        "a robot that only moves forward stops where the world stops it",
+    ),
+    // A scent that remembers the heading it was left facing.
+    ("direction-scent", "no two robots are lost on the same cell"),
+    // A scent spent on the robot it saves.
+    ("scent-consumed", "no two robots are lost on the same cell"),
+    // One scent remembered, not a set of them.
+    ("one-scent", "no two robots are lost on the same cell"),
+    // A lost robot that keeps running its instructions.
+    (
+        "keep-simulating",
+        "a robot that only moves forward stops where the world stops it",
+    ),
+    // A scent looked up only where a robot was placed.
+    (
+        "scent-at-start",
+        "a robot that only moves forward stops where the world stops it",
+    ),
+];
+
+#[test]
+fn every_misreading_of_the_semantics_is_caught_by_a_named_invariant() {
+    let fixtures = Fixtures::new("semantic-defects");
+    let gallery = Path::new(env!("CARGO_BIN_EXE_misbehave"))
+        .display()
+        .to_string();
+
+    for (defect, predicate) in SEMANTIC_DEFECTS {
+        let implementation =
+            fixtures.implementation(defect, &format!("MISBEHAVE={defect} exec {gallery}"));
+        let report = grade_with(
+            &implementation,
+            &["--spelling", "0", "--rejections", "0", "--properties", "80"],
+        );
+        assert!(
+            report
+                .stdout
+                .lines()
+                .any(|line| line.starts_with("VIOLATED") && line.contains(predicate)),
+            "{defect:?} must be caught by {predicate:?}, and was not:\n{}",
+            report.stdout
+        );
+    }
+}
+
+#[test]
+fn a_defect_no_invariant_catches_is_owned_by_a_case_instead() {
+    // `stop-on-ignore` — a blocked move that ends the run rather than being
+    // skipped — escapes every predicate. That is not a hole: the catalogue
+    // owns it, and the scent matrix above asserts which case fails it. The
+    // point of writing it down is that the battery's coverage is known rather
+    // than assumed.
+    let caught_by_a_predicate: Vec<&str> = SEMANTIC_DEFECTS.iter().map(|(d, _)| *d).collect();
+    assert!(
+        !caught_by_a_predicate.contains(&"stop-on-ignore"),
+        "if an invariant now catches it, add it to the table above"
+    );
+    assert!(
+        NEAR_MISSES
+            .iter()
+            .any(|(defect, cases)| *defect == "stop-on-ignore" && !cases.is_empty()),
+        "a defect no predicate catches must be owned by a case"
     );
 }

@@ -521,7 +521,7 @@ mod tests {
         for _ in 0..600 {
             let mission = Mission::draw_shaped(&mut rng, &contract);
             let answered = run(&mission);
-            for (index, verdict) in properties::check(&mission, &answered)
+            for (index, verdict) in properties::check(&mission, &answered, &contract)
                 .into_iter()
                 .enumerate()
             {

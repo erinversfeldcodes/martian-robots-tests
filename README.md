@@ -109,7 +109,10 @@ This generator checks statements that must hold of any correct answer, printing 
       no two robots are lost on the same cell
       the same input twice gives the same answer
       appending a robot does not change the robots before it
+      running a robot's instructions in two halves ends where running them whole does
 ```
+
+The last of those is the one that says anything about a *mixed* instruction string. Six of the others constrain shape rather than meaning, and the two that constrain meaning exclude any string containing both a turn and an `F` — so a program wrong only about where a robot ends up would otherwise agree with itself across every respelling and pass. Splitting one robot's instructions at a point, running each half, and requiring the halves to end where the whole did needs no second implementation to judge: the state at the seam is the same state. It is skipped when the first half loses the robot, because a loss ends the run and leaves a scent the split cannot reproduce.
 
 ### Rejections
 
