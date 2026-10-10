@@ -380,10 +380,15 @@ fn an_implementation_that_is_wrong_in_a_way_nothing_else_sees_is_caught() {
             "8",
         ],
     );
-    // This used to be the differential mode's case: a plausible answer that
-    // only a second implementation could judge. It is not — the invariants
-    // need no second implementation and catch it twice over, which is part of
-    // why the differential mode was removed.
+    // This fixture is wrong about everything: one constant line whatever the
+    // mission. The invariants catch that easily, and this test says only that.
+    //
+    // It does not say the invariants cover what the removed differential mode
+    // covered — they do not. A defect that answers the right number of lines,
+    // in the right shape, and is wrong only about where a robot ended up is
+    // invisible to every predicate here, because only two of them constrain
+    // meaning at all and both exclude mixed instruction strings. The mode was
+    // removed as overkill at this scope, not as redundant.
     assert!(
         report.stdout.contains("VIOLATED one line per robot"),
         "an answer with the wrong number of lines must be caught:\n{}",

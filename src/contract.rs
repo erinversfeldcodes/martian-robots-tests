@@ -726,7 +726,36 @@ mod tests {
         assert_eq!(
             contract.version,
             env!("CARGO_PKG_VERSION"),
-            "contract/limits.toml and Cargo.toml disagree about what this is"
+            "contract/contract.toml and Cargo.toml disagree about what this is"
+        );
+    }
+
+    #[test]
+    fn the_version_ruling_says_what_the_gate_enforces() {
+        // R26's words and `conformance_version` have to agree. They did not
+        // for two releases: the ruling was corrected, the correction was
+        // discarded by a `git checkout` while tidying up after an unrelated
+        // experiment, and nothing noticed because nothing held the two
+        // together. A gate that enforces less than its own ruling says lets a
+        // program through that the contract refuses.
+        let contract = Contract::load().unwrap();
+        let ruling = contract
+            .rulings
+            .iter()
+            .find(|ruling| ruling.id == "R26")
+            .expect("R26");
+        let Some(Decision::Ruled(ruled)) = &ruling.decision else {
+            panic!("R26 is not ruled");
+        };
+        assert!(
+            ruled.ruling.contains("major version"),
+            "R26 says {:?}, and the gate enforces the major alone",
+            ruled.ruling
+        );
+        assert!(
+            !ruled.ruling.contains("major and minor"),
+            "R26 asks for more than the gate enforces: {:?}",
+            ruled.ruling
         );
     }
 

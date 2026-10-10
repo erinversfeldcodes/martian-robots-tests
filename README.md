@@ -30,7 +30,9 @@ That rendering is written to stdout rather than to a tracked file to avoid needi
 
 ## Ruled and open questions
 
-A question with `status = "ruled"` becomes part of the contract: an implementation that disagrees with the contract is wrong, and a test case is expected to pin the rule. A question with `status = "open"` is deliberately undecided: no case may test it, and an implementation may answer it however it likes. The difference is data rather than prose so that a tool can act on it.
+A question carrying a `ruled` decision becomes part of the contract: an implementation that disagrees with the contract is wrong, and a test case is expected to pin the rule. A question carrying an `open` decision is deliberately undecided: no case may test it, and an implementation may answer it however it likes.
+
+The difference is structural rather than prose, so a tool can act on it. The schema makes the decision a `oneof`, which is why a question cannot be both ruled and open, and why there is no `status` field to get wrong — the shape of a ruling is the statement that it has been ruled.
 
 ## Getting it
 
@@ -82,7 +84,7 @@ properties: <n> mission(s), seed <n>, <n> violation(s)
 rejections: <n> of <n> attempted, seed <n>, <n> failure(s)
 ```
 
-A case is a fixed input and the output the contract expects of it. Each case records which rulings it enforces, and tests refuse citations to questions that do not exist or are still open. Cases ask for what the contract fixes: a rejection must produce no stdout and some diagnostic, with any non-zero exit; a diagnostic must indicate the line where it is attributable; help output must exist. The three lines after `result:` are generators, which supply input the catalogue does not hold. Two of them produce valid missions: `--spelling` requires the same answer to one mission written several legal ways, and `--properties` checks statements that must hold of any correct answer. The third, `--rejections`, produces invalid input instead, where the question is whether it is refused with a diagnostic somebody can act on. None of them needs to know the right answer in advance, which is the constraint that shapes all three — and the reason a fourth that did was removed.
+A case is a fixed input and the output the contract expects of it. Each case records which rulings it enforces, and tests refuse citations to questions that do not exist or are still open. Cases ask for what the contract fixes: a rejection must produce no stdout and some diagnostic, with any non-zero exit; a diagnostic must indicate the line where it is attributable; help output must exist. The three lines after `result:` are generators, which supply input the catalogue does not hold. Two of them produce valid missions: `--spelling` requires the same answer to one mission written several legal ways, and `--properties` checks statements that must hold of any correct answer. The third, `--rejections`, produces invalid input instead, where the question is whether it is refused with a diagnostic somebody can act on. None of them needs to know the right answer in advance, which is the constraint that shapes all three. A fourth that did was removed; see below for why, and for when it would be worth having.
 
 The generator seed is fixed by default so two runs of the same code grade the same corpus. The seed is documented in `tests/corpus.rs`. `--seed random` draws a wider corpus and prints the seed it chose, which replays through `--seed <n>`. In CI the fixed seed is the gate; a scheduled random run finds the next case worth adding.
 
@@ -121,7 +123,7 @@ The expected line and the admissible rulings come from how the mutation was buil
 
 ## Differential testing, and why there is none here
 
-Differential testing compares two implementations of the same specification and treats any difference as a finding. It is how compiler bugs are found at scale, how database engines are fuzzed, and how a migration is de-risked when old and new systems run side by side on the same traffic. Its strength comes from two implementations being independent of each other, showcasing how the same specification is interpreted differently, introducing different failure patterns. Its overkill in project of this scope and size, but would be worth introducing when a second implementation exists, as it allows for a smooth transition from a legacy system to a new one.
+Differential testing compares two implementations of the same specification and treats any difference as a finding. It is how compiler bugs are found at scale, how database engines are fuzzed, and how a migration is de-risked when old and new systems run side by side on the same traffic. Its strength comes from two implementations being independent of each other, showcasing how the same specification is interpreted differently, introducing different failure patterns. It is overkill in a project of this scope and size, but would be worth introducing when a second implementation exists, as it allows for a smooth transition from a legacy system to a new one.
 
 A weaker version of the idea is still present in this suite in the spelling generator which compares a program with itself across legal respellings; the invariants compare an answer against statements that must hold of any correct one. Both are cheaper than a second implementation and more productive for the current scope.
 
