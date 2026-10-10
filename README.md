@@ -11,12 +11,14 @@ For any project the problem statement is the human-understandble and human-creat
 | File | What it holds |
 |---|---|
 | `contract.proto` | the schema: what a contract *is*. The Rust types the suite uses are generated from it |
-| `contract.toml` | this contract's values: the version, the limits, the grammar's productions, and every question the problem statement leaves open |
+| `contract.toml` | this contract's values: the version, the limits, the grammar's productions, the semantics of the letters, and every question the problem statement leaves open |
 | `template.md` | the narrative, with holes where the facts go |
 
 The schema is the shape and the instance is the content, so neither restates the other. Nothing hand-writes the contract's Rust types: `build.rs` compiles the schema with `protox` and generates them with `prost-build`, which means a field added to the schema appears in the suite without anybody writing it twice, and a field removed stops compiling. A consumer in any language `protoc` targets generates its own types from the same schema.
 
 The instance stays TOML and stays authored by hand, because the rulings are prose that people read and argue over in diffs, and no binary or comment-free format supports that. The schema is what makes a misspelled key an error instead of a silently missing value.
+
+The semantics are the part a grammar cannot hold: where the world's lower-left corner is, the step each orientation takes, what each command does, and how a robot's final position is written. They are in the schema because the problem statement states them and because an implementation that derives them cannot disagree with the contract about which way north is — and because a command type added here is then a command type the implementation cannot silently ignore. The letters live there too, next to their meanings, so the grammar's `orientation` and `instruction` productions are rendered from the semantics rather than listing the same letters twice.
 
 The limits are defined once and read everywhere: by the document, by the suite's boundary cases, and by an implementation that derives its constants from them. The grammar is productions rather than text, so the EBNF a reader sees is rendered from the same data the generators draw their terminals from — there is no grammar file to keep in step, and the characters the grammar does not admit are exactly what the rejection generator injects. To read the contract as a single, coherent document:
 

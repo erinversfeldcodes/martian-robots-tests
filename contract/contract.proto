@@ -23,6 +23,78 @@ message Contract {
   // Every question the problem statement leaves open, ruled or deliberately
   // open. Ordered: the document renders them in this sequence.
   repeated Ruling rulings = 4;
+
+  // What the letters mean, as distinct from which letters the grammar admits.
+  Semantics semantics = 5;
+}
+
+// The meaning of a mission, which no grammar can express.
+//
+// The problem statement says these in prose: where the world's lower-left
+// corner is, that north is the direction from (x, y) to (x, y + 1), that L and
+// R turn ninety degrees, that F advances one grid point. Stating them here
+// rather than in each implementation is what lets the letters and their
+// meanings be generated together, so a command type added to this contract
+// cannot be silently ignored by a reader that still knows only three.
+message Semantics {
+  // The world's lower-left corner. The problem statement assumes it rather
+  // than stating it, and an implementation that assumed otherwise would be
+  // wrong in a way nothing here would catch.
+  Position origin = 1;
+
+  // Every orientation, with the step it takes. The letters live here and not
+  // in the grammar: the grammar's `orientation` production is rendered from
+  // these, so there is one place a letter is written down.
+  repeated Orientation orientations = 2;
+
+  // Every command, with what it does. Likewise the grammar's `instruction`
+  // production. Adding one here is what "provision should be made for
+  // additional command types" means in practice.
+  repeated Command commands = 3;
+
+  // How a robot's final position is written.
+  Output output = 4;
+}
+
+message Position {
+  uint32 x = 1;
+  uint32 y = 2;
+}
+
+message Orientation {
+  // The letter the grammar admits for it.
+  string letter = 1;
+
+  // The step `advance` takes while facing this way, as a signed offset. North
+  // is (0, 1) because the problem statement fixes that one; the others follow
+  // from turning, and a reader can derive the compass order from the angles
+  // rather than being told it separately.
+  int32 dx = 2;
+  int32 dy = 3;
+}
+
+message Command {
+  // The letter the grammar admits for it.
+  string letter = 1;
+
+  oneof effect {
+    // Clockwise is positive, so `R` is 90 and `L` is -90.
+    int32 turn_degrees = 2;
+
+    // Grid points moved in the direction currently faced.
+    uint32 advance = 3;
+  }
+}
+
+message Output {
+  // A robot's line, with `{x}`, `{y}` and `{orientation}` filled in.
+  string line = 1;
+
+  // Appended to that line when the robot left the world.
+  string lost_suffix = 2;
+
+  // The line ending emitted, whatever the input used.
+  string line_ending = 3;
 }
 
 // The numeric facts. Not expressible in the grammar, which is why they are

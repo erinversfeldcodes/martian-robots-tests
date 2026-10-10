@@ -9,8 +9,12 @@ mod schema {
     include!(concat!(env!("OUT_DIR"), "/martian_robots.contract.rs"));
 }
 
+pub use schema::command::Effect;
 pub use schema::ruling::Decision;
-pub use schema::{Limits, Open, Production, Ruled, Ruling, Term};
+pub use schema::{
+    Command, Limits, Open, Orientation, Output, Position, Production, Ruled, Ruling, Semantics,
+    Term,
+};
 
 /// The contract, as the suite uses it.
 ///
@@ -24,6 +28,7 @@ pub struct Contract {
     pub limits: Limits,
     pub rulings: Vec<Ruling>,
     pub grammar: Grammar,
+    pub semantics: Semantics,
 }
 
 /// The grammar's terminals, projected from its productions, and the
@@ -83,6 +88,41 @@ impl Grammar {
     /// what makes the published grammar and the injected characters the same
     /// facts: add a separator to the grammar and it stops being injected,
     /// with nothing to remember.
+    /// The two productions whose letters are stated in `semantics`.
+    ///
+    /// A letter is written once, where its meaning is. The grammar still has
+    /// an `orientation` and an `instruction` production — a reader needs them
+    /// and the EBNF renders them — but they are built from the semantics
+    /// rather than listed a second time, so the two cannot disagree.
+    fn vocabulary_productions(semantics: &Semantics) -> Vec<Production> {
+        let terminal = |name: &str, letters: Vec<String>, comment: &str| Production {
+            name: name.to_string(),
+            literals: letters,
+            terms: Vec::new(),
+            comment: comment.to_string(),
+        };
+        vec![
+            terminal(
+                "orientation",
+                semantics
+                    .orientations
+                    .iter()
+                    .map(|orientation| orientation.letter.clone())
+                    .collect(),
+                "what each one means is in the semantics",
+            ),
+            terminal(
+                "instruction",
+                semantics
+                    .commands
+                    .iter()
+                    .map(|command| command.letter.clone())
+                    .collect(),
+                "what each one does is in the semantics",
+            ),
+        ]
+    }
+
     pub fn project(note: String, productions: Vec<Production>) -> Result<Self, String> {
         let literals = |name: &str| -> Result<Vec<String>, String> {
             let production = productions
@@ -226,6 +266,7 @@ impl Contract {
             limits,
             grammar,
             rulings,
+            semantics,
         } = toml::from_str(instance).map_err(|error| format!("contract/contract.toml: {error}"))?;
 
         // Everything the schema can state, it states. These two it cannot: a
@@ -248,12 +289,36 @@ impl Contract {
 
         let limits = limits.ok_or("the contract states no limits")?;
         let grammar = grammar.ok_or("the contract states no grammar")?;
+        let semantics = semantics.ok_or("the contract states no semantics")?;
+
+        if semantics.orientations.is_empty() || semantics.commands.is_empty() {
+            return Err("the semantics state no orientations or no commands".to_string());
+        }
+        if semantics.output.is_none() {
+            return Err("the semantics state no output format".to_string());
+        }
+
+        // The vocabulary productions are built from the semantics and spliced
+        // in where a reader expects them: after the line shapes, before the
+        // numbers.
+        let mut productions = grammar.productions;
+        let at = productions
+            .iter()
+            .position(|production| production.name == "number")
+            .unwrap_or(productions.len());
+        for (offset, production) in Grammar::vocabulary_productions(&semantics)
+            .into_iter()
+            .enumerate()
+        {
+            productions.insert(at + offset, production);
+        }
 
         Ok(Self {
             version,
             limits,
             rulings,
-            grammar: Grammar::project(grammar.note, grammar.productions)?,
+            grammar: Grammar::project(grammar.note, productions)?,
+            semantics,
         })
     }
 
@@ -550,8 +615,12 @@ mod tests {
              [grammar]\nnote = \"\"\n\
              [[grammar.productions]]\nname = \"separator\"\nliterals = [\" \"]\n\
              [[grammar.productions]]\nname = \"eol\"\nliterals = [\"\\n\"]\n\
-             [[grammar.productions]]\nname = \"orientation\"\nliterals = [\"N\"]\n\
-             [[grammar.productions]]\nname = \"instruction\"\nliterals = [\"L\"]\n\
+             [semantics]\n[semantics.origin]\nx = 0\ny = 0\n\
+             [[semantics.orientations]]\nletter = \"N\"\ndx = 0\ndy = 1\n\
+             [[semantics.commands]]\nletter = \"L\"\n\
+             [semantics.commands.effect]\nturn_degrees = -90\n\
+             [semantics.output]\nline = \"{{x}} {{y}} {{orientation}}\"\n\
+             lost_suffix = \" LOST\"\nline_ending = \"\\n\"\n\
              {rulings}"
         )
     }

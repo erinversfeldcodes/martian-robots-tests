@@ -103,14 +103,6 @@ terms = [
 ]
 
 [[grammar.productions]]
-name = "orientation"
-literals = ["N", "S", "E", "W"]
-
-[[grammar.productions]]
-name = "instruction"
-literals = ["L", "R", "F"]
-
-[[grammar.productions]]
 name = "number"
 terms = [
   { name = "digit" },
@@ -144,6 +136,54 @@ terms = [
 [[grammar.productions]]
 name = "eol"
 literals = ["\n", "\r\n"]
+
+[semantics]
+
+[semantics.origin]
+x = 0
+y = 0
+
+# North is the direction from (x, y) to (x, y + 1); the rest follow from
+# turning ninety degrees at a time.
+[[semantics.orientations]]
+letter = "N"
+dx = 0
+dy = 1
+
+[[semantics.orientations]]
+letter = "E"
+dx = 1
+dy = 0
+
+[[semantics.orientations]]
+letter = "S"
+dx = 0
+dy = -1
+
+[[semantics.orientations]]
+letter = "W"
+dx = -1
+dy = 0
+
+[[semantics.commands]]
+letter = "L"
+[semantics.commands.effect]
+turn_degrees = -90
+
+[[semantics.commands]]
+letter = "R"
+[semantics.commands.effect]
+turn_degrees = 90
+
+[[semantics.commands]]
+letter = "F"
+[semantics.commands.effect]
+advance = 1
+
+[semantics.output]
+line = "{x} {y} {orientation}"
+lost_suffix = " LOST"
+line_ending = "\n"
 
 [[rulings]]
 id = "R1"
