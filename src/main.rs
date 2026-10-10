@@ -15,8 +15,6 @@ Usage: martian-robots-verify --bin <path> [--quiet]
   --spelling <n> missions to render several legal ways (default 60)
   --properties <n> missions to check invariants against (default 40)
   --rejections <n> missions to break on purpose (default 40)
-  --differential <n> missions to compare with a second implementation
-                 written from the same contract (default 60)
   --seed <n>     the seed the generated missions come from, so a failure
                  replays. Fixed by default, so two runs of the same code
                  grade the same corpus; `--seed random` explores a wider one
@@ -64,7 +62,6 @@ impl Task {
         let mut missions = 60;
         let mut checks = 40;
         let mut breakages = 40;
-        let mut against_reference = 60;
         let mut seed = None;
         let mut only = None;
         let mut timeout = run::TIMEOUT;
@@ -83,7 +80,6 @@ impl Task {
                 "--spelling" => missions = number(args.next(), "--spelling")?,
                 "--properties" => checks = number(args.next(), "--properties")?,
                 "--rejections" => breakages = number(args.next(), "--rejections")?,
-                "--differential" => against_reference = number(args.next(), "--differential")?,
                 "--seed" => {
                     let asked = args.next().ok_or("--seed needs a number or `random`")?;
                     seed = Some(if asked == "random" {
@@ -109,7 +105,6 @@ impl Task {
             missions = 0;
             checks = 0;
             breakages = 0;
-            against_reference = 0;
         }
 
         Ok(Self::Grade {
@@ -120,8 +115,6 @@ impl Task {
                 spellings: 4,
                 properties: u32::try_from(checks).map_err(|_| "--properties is too large")?,
                 rejections: u32::try_from(breakages).map_err(|_| "--rejections is too large")?,
-                differential: u32::try_from(against_reference)
-                    .map_err(|_| "--differential is too large")?,
                 seed: seed.unwrap_or(rng::Rng::DEFAULT_SEED),
                 timeout,
             },
@@ -397,37 +390,8 @@ fn generated(
          a larger budget or a different seed",
     )?;
 
-    let disagreements = modes::differential(implementation, contract, budget)?;
-    for disagreement in &disagreements {
-        println!("DISAGREES with the reference");
-        println!("      mission:  {}", show(&disagreement.mission));
-        println!("      expected: {}", show(&disagreement.expected));
-        println!("      got:      {}", show(&disagreement.got));
-        if let Some(reduced) = &disagreement.reduced {
-            println!(
-                "      reduced in {} attempt(s){}:",
-                reduced.attempts,
-                if reduced.exhausted {
-                    ", before the budget ran out"
-                } else {
-                    ""
-                }
-            );
-            println!("      mission:  {}", show(&reduced.mission));
-            println!("      expected: {}", show(&reduced.expected));
-            println!("      got:      {}", show(&reduced.got));
-        }
-    }
-    println!(
-        "differential: {} mission(s), seed {}, {} disagreement(s)",
-        budget.differential,
-        budget.seed,
-        disagreements.len()
-    );
-
     Ok(spelling.divergences.len()
         + spelling.refused.len()
         + properties.violations.len()
-        + rejections.failures.len()
-        + disagreements.len())
+        + rejections.failures.len())
 }

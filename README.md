@@ -80,10 +80,9 @@ result: <n> case(s) run, <n> passed, <n> failed
 spelling: <n> mission(s) x <n> rendering(s), seed <n>, <n> divergence(s), <n> refused
 properties: <n> mission(s), seed <n>, <n> violation(s)
 rejections: <n> of <n> attempted, seed <n>, <n> failure(s)
-differential: <n> mission(s), seed <n>, <n> disagreement(s)
 ```
 
-A case is a fixed input and the output the contract expects of it. Each case records which rulings it enforces, and tests refuse citations to questions that do not exist or are still open. Cases ask for what the contract fixes: a rejection must produce no stdout and some diagnostic, with any non-zero exit; a diagnostic must indicate the line where it is attributable; help output must exist. The four lines after `result:` are generators, which supply input for the tests. Three of them produce valid missions, one invalid: `--spelling` requires the same answer to one mission written several legal ways, `--properties` checks statements that must hold of any correct answer, and `--differential` compares against a second implementation written from the same contract. The fourth, `--rejections`, produces invalid input instead, where the question is whether it is refused with a diagnostic somebody can act on.
+A case is a fixed input and the output the contract expects of it. Each case records which rulings it enforces, and tests refuse citations to questions that do not exist or are still open. Cases ask for what the contract fixes: a rejection must produce no stdout and some diagnostic, with any non-zero exit; a diagnostic must indicate the line where it is attributable; help output must exist. The three lines after `result:` are generators, which supply input the catalogue does not hold. Two of them produce valid missions: `--spelling` requires the same answer to one mission written several legal ways, and `--properties` checks statements that must hold of any correct answer. The third, `--rejections`, produces invalid input instead, where the question is whether it is refused with a diagnostic somebody can act on. None of them needs to know the right answer in advance, which is the constraint that shapes all three — and the reason a fourth that did was removed.
 
 The generator seed is fixed by default so two runs of the same code grade the same corpus. The seed is documented in `tests/corpus.rs`. `--seed random` draws a wider corpus and prints the seed it chose, which replays through `--seed <n>`. In CI the fixed seed is the gate; a scheduled random run finds the next case worth adding.
 
@@ -120,13 +119,11 @@ rejections: <n> of <n> attempted, seed <n>, <n> failure(s)
 
 The expected line and the admissible rulings come from how the mutation was built rather than from what the implementation said, so an implementation cannot teach the suite to accept its own answer. Every mutation is checked against the published grammar to be genuinely invalid before it is used.
 
-### Differential
+## Differential testing, and why there is none here
 
-This generator compares answers with a second implementation written from the same contract:
+Differential testing compares two implementations of the same specification and treats any difference as a finding. It is how compiler bugs are found at scale, how database engines are fuzzed, and how a migration is de-risked when old and new systems run side by side on the same traffic. Its strength comes from two implementations being independent of each other, showcasing how the same specification is interpreted differently, introducing different failure patterns. Its overkill in project of this scope and size, but would be worth introducing when a second implementation exists, as it allows for a smooth transition from a legacy system to a new one.
 
-```
-differential: <n> mission(s), seed <n>, <n> disagreement(s)
-```
+A weaker version of the idea is still present in this suite in the spelling generator which compares a program with itself across legal respellings; the invariants compare an answer against statements that must hold of any correct one. Both are cheaper than a second implementation and more productive for the current scope.
 
 | Exit code | Meaning |
 |---|---|

@@ -12,16 +12,17 @@
 //! reports its version in a sentence. A case that fails this program has
 //! pinned something the contract left free.
 //!
-//! It is not the implementation this contract is for. It parses and
-//! diagnoses; the simulation is the suite's own reference, because a third
-//! simulator would be a third chance to be wrong about §2.2.
+//! It is a complete implementation: it parses, diagnoses and simulates. The
+//! simulation used to live in the suite as a differential oracle, and moved
+//! here when that mode was removed — a program built to conform needs one, and
+//! this is the only place left that does.
 
+use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::process::ExitCode;
 
 use martian_robots_verify::contract::Contract;
 use martian_robots_verify::mission::{Mission, Robot};
-use martian_robots_verify::reference;
 
 /// Nothing in the contract names a non-zero code, so this one is not 1.
 const REFUSED: u8 = 7;
@@ -62,7 +63,7 @@ fn simulate(contract: &Contract) -> ExitCode {
 
     match read(&input, contract) {
         Ok(mission) => {
-            let _ = std::io::stdout().write_all(&reference::run(&mission));
+            let _ = std::io::stdout().write_all(&run(&mission));
             ExitCode::SUCCESS
         }
         Err(problems) => {
@@ -356,4 +357,195 @@ fn split_on<'a>(line: &'a str, separators: &[char]) -> Vec<&'a str> {
     line.split(|c| separators.contains(&c))
         .filter(|part| !part.is_empty())
         .collect()
+}
+
+/// Run a mission the way §2.2 describes it. The mission must be valid — the
+/// generators only produce valid ones for this mode — so nothing here
+/// diagnoses anything.
+pub fn run(mission: &Mission) -> Vec<u8> {
+    let mut scented: Vec<(u32, u32)> = Vec::new();
+    let mut answer = String::new();
+
+    for robot in &mission.robots {
+        let (mut x, mut y) = (robot.x, robot.y);
+        let mut facing = robot.facing;
+        let mut lost = false;
+
+        for step in robot.instructions.chars() {
+            match step {
+                // Three quarter-turns right is one left, which keeps the
+                // arithmetic unsigned.
+                'L' => facing = turned(facing, 3),
+                'R' => facing = turned(facing, 1),
+                'F' => {
+                    let (ahead_x, ahead_y) = ahead(x, y, facing);
+                    let leaves = ahead_x < 0
+                        || ahead_y < 0
+                        || ahead_x > i64::from(mission.max_x)
+                        || ahead_y > i64::from(mission.max_y);
+                    if leaves {
+                        // R9: the scent is a property of the cell, not of the
+                        // direction the robot that left it was facing.
+                        if scented.contains(&(x, y)) {
+                            continue;
+                        }
+                        scented.push((x, y));
+                        lost = true;
+                        break;
+                    }
+                    x = u32::try_from(ahead_x).unwrap_or(x);
+                    y = u32::try_from(ahead_y).unwrap_or(y);
+                }
+                _ => {}
+            }
+        }
+
+        let _ = writeln!(
+            answer,
+            "{x} {y} {facing}{}",
+            if lost { " LOST" } else { "" }
+        );
+    }
+
+    answer.into_bytes()
+}
+
+const COMPASS: [char; 4] = ['N', 'E', 'S', 'W'];
+
+fn turned(facing: char, quarters: usize) -> char {
+    let at = COMPASS
+        .iter()
+        .position(|&point| point == facing)
+        .unwrap_or(0);
+    COMPASS[(at + quarters) % 4]
+}
+
+/// North is the direction from `(x, y)` to `(x, y + 1)`, which is the only
+/// thing in the brief that fixes the compass.
+fn ahead(x: u32, y: u32, facing: char) -> (i64, i64) {
+    let (x, y) = (i64::from(x), i64::from(y));
+    match facing {
+        'N' => (x, y + 1),
+        'E' => (x + 1, y),
+        'S' => (x, y - 1),
+        _ => (x - 1, y),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::run;
+    use martian_robots_verify::contract::{Contract, SAMPLE_INPUT, SAMPLE_OUTPUT};
+    use martian_robots_verify::mission::Mission;
+
+    #[test]
+    fn the_briefs_sample_comes_out_as_the_brief_says() {
+        // The only external truth available to this suite: input and output
+        // both published, by somebody who wrote neither of these
+        // implementations.
+        let mission =
+            Mission::read_back(SAMPLE_INPUT, &grammar()).expect("the sample is a valid mission");
+        assert_eq!(run(&mission), SAMPLE_OUTPUT);
+    }
+
+    fn grammar() -> martian_robots_verify::contract::Grammar {
+        Contract::load().expect("a coherent contract").grammar
+    }
+
+    fn answer(input: &str) -> String {
+        let mission = Mission::read_back(input.as_bytes(), &grammar()).expect("a valid mission");
+        String::from_utf8(run(&mission)).expect("text")
+    }
+
+    #[test]
+    fn a_robot_with_nothing_to_do_reports_where_it_stands() {
+        assert_eq!(answer("5 3\n1 1 E\n\n"), "1 1 E\n");
+    }
+
+    #[test]
+    fn turning_does_not_move_anything() {
+        assert_eq!(answer("5 3\n1 1 N\nLL\n"), "1 1 S\n");
+        assert_eq!(answer("5 3\n1 1 N\nRRR\n"), "1 1 W\n");
+    }
+
+    #[test]
+    fn a_robot_that_walks_off_is_lost_where_it_last_stood() {
+        assert_eq!(answer("1 1\n1 1 N\nF\n"), "1 1 N LOST\n");
+    }
+
+    #[test]
+    fn a_scent_blocks_a_departure_by_any_edge() {
+        // The corner case the brief's own sample cannot distinguish.
+        assert_eq!(answer("1 1\n1 1 N\nF\n1 1 E\nF\n"), "1 1 N LOST\n1 1 E\n");
+    }
+
+    #[test]
+    fn a_scent_is_not_used_up() {
+        assert_eq!(
+            answer("1 1\n1 1 N\nF\n1 1 N\nF\n1 1 N\nF\n"),
+            "1 1 N LOST\n1 1 N\n1 1 N\n"
+        );
+    }
+
+    #[test]
+    fn a_scent_marks_the_cell_and_not_the_robot() {
+        assert_eq!(
+            answer("2 0\n0 0 W\nF\n0 0 E\nFFF\n"),
+            "0 0 W LOST\n2 0 E LOST\n"
+        );
+    }
+
+    #[test]
+    fn an_ignored_move_does_not_end_the_run() {
+        // One instruction is ignored, not the rest of the string: the robot
+        // survives the scented edge, turns, and walks inland.
+        assert_eq!(answer("2 1\n2 1 N\nF\n2 1 N\nFLF\n"), "2 1 N LOST\n1 1 W\n");
+    }
+
+    #[test]
+    fn the_reference_satisfies_every_invariant_it_underwrites() {
+        // The differential mode's verdict and the shrinker's predicate both
+        // rest on this implementation being right, and what stood behind it
+        // was the brief's sample and the hand examples above. The invariant
+        // battery is already written and needs no second opinion, so it can be
+        // turned on the oracle as readily as on a candidate: a statement true
+        // of any correct answer is true of this one, over a corpus no reviewer
+        // chose.
+        use martian_robots_verify::properties::{self, Verdict};
+        use martian_robots_verify::rng::Rng;
+
+        let contract = Contract::load().expect("a coherent contract");
+        let mut rng = Rng::from_seed(71);
+        let mut fired = [0u32; properties::NAMES.len()];
+
+        for _ in 0..600 {
+            let mission = Mission::draw_shaped(&mut rng, &contract);
+            let answered = run(&mission);
+            for (index, verdict) in properties::check(&mission, &answered)
+                .into_iter()
+                .enumerate()
+            {
+                match verdict {
+                    Verdict::NotApplicable => {}
+                    Verdict::Held => fired[index] += 1,
+                    Verdict::Violated(why) => panic!(
+                        "the reference violates {:?}: {why}\n  on {}",
+                        properties::NAMES[index],
+                        String::from_utf8_lossy(&mission.canonical())
+                    ),
+                }
+            }
+        }
+
+        // A predicate that never evaluated says nothing about the reference,
+        // which is the same trap the mode itself prints firing counts for.
+        for (count, name) in fired.iter().zip(properties::NAMES) {
+            assert!(*count > 0, "no drawn mission evaluated {name:?}");
+        }
+    }
+
+    #[test]
+    fn a_mission_with_no_robots_says_nothing() {
+        assert_eq!(answer("5 3\n"), "");
+    }
 }

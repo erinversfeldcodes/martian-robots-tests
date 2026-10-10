@@ -6,7 +6,6 @@ use crate::expect::{Diagnostic, Expect, show};
 use crate::mission::Mission;
 use crate::mutation;
 use crate::properties;
-use crate::reference;
 use crate::rng::Rng;
 use crate::run::observe;
 use crate::shrink;
@@ -19,7 +18,6 @@ pub struct Budget {
     pub spellings: u32,
     pub properties: u32,
     pub rejections: u32,
-    pub differential: u32,
     pub seed: u64,
 }
 
@@ -178,8 +176,21 @@ pub fn properties(
                 properties::Verdict::Held => fired[index] += 1,
                 properties::Verdict::Violated(why) => {
                     fired[index] += 1;
+                    // The first violation is reduced before it is reported. A
+                    // drawn mission is a dozen robots and several hundred
+                    // bytes, which reproduces a violation without explaining
+                    // it; only the first, because each candidate costs a
+                    // process and the rest of the list says how widespread
+                    // the problem is.
+                    let reduced = if violations.is_empty() {
+                        let smaller =
+                            reduce(implementation, contract, &mission, index, budget.timeout)?;
+                        format!("\n      reduced to {}", show(&smaller))
+                    } else {
+                        String::new()
+                    };
                     violations.push(format!(
-                        "{}: {why}\n      on {}",
+                        "{}: {why}\n      on {}{reduced}",
                         names[index],
                         show(&input)
                     ));
@@ -314,96 +325,28 @@ pub fn rejections(
     Ok(RejectionRun { run, failures })
 }
 
-pub struct Disagreement {
-    pub mission: Vec<u8>,
-    pub expected: Vec<u8>,
-    pub got: Vec<u8>,
-    /// The same disagreement on the smallest mission that still produces it.
-    ///
-    /// Only the first disagreement in a run is reduced. Reducing costs a
-    /// process per candidate, and a program that disagrees about everything
-    /// would turn a sixty-mission run into a six-thousand-process one for no
-    /// extra information: whoever reads this needs one reproducer they can
-    /// hold in their head, and the rest of the list says how widespread the
-    /// problem is.
-    pub reduced: Option<Reduction>,
-}
-
-pub struct Reduction {
-    pub mission: Vec<u8>,
-    pub expected: Vec<u8>,
-    pub got: Vec<u8>,
-    pub attempts: usize,
-    pub exhausted: bool,
-}
-
-/// Reduce a disagreeing mission to the smallest one that still disagrees.
+/// Reduce a mission that violates a predicate to the smallest one that still
+/// violates the same predicate.
 ///
-/// The predicate is "differs from the reference", which a refusal satisfies:
-/// the reference answers every valid mission, so a program that refuses one
-/// differs from it. Both are differential failures, and the report says which.
+/// A drawn mission is a dozen robots and several hundred bytes, which
+/// reproduces a violation without explaining it. Only the first violation in a
+/// run is reduced, because each candidate costs a process.
 fn reduce(
     implementation: &Path,
     contract: &Contract,
     mission: &Mission,
+    predicate: usize,
     timeout: Duration,
-) -> Result<Reduction, String> {
+) -> Result<Vec<u8>, String> {
     let smaller = shrink::shrink(mission, contract, |candidate| {
-        let said = answer(implementation, &candidate.canonical(), timeout)?;
-        Ok(said.as_deref() != Some(reference::run(candidate).as_slice()))
+        let Some(said) = answer(implementation, &candidate.canonical(), timeout)? else {
+            // A refused valid mission is its own failure, not this one.
+            return Ok(false);
+        };
+        Ok(matches!(
+            properties::check(candidate, &said).get(predicate),
+            Some(properties::Verdict::Violated(_))
+        ))
     })?;
-
-    let input = smaller.mission.canonical();
-    let expected = reference::run(&smaller.mission);
-    let got = answer(implementation, &input, timeout)?
-        .unwrap_or_else(|| b"<refused a valid mission>".to_vec());
-    Ok(Reduction {
-        mission: input,
-        expected,
-        got,
-        attempts: smaller.attempts,
-        exhausted: smaller.exhausted,
-    })
-}
-
-/// Compare answers with a second implementation written from the same
-/// contract.
-pub fn differential(
-    implementation: &Path,
-    contract: &Contract,
-    budget: &Budget,
-) -> Result<Vec<Disagreement>, String> {
-    let mut rng = Rng::from_seed(budget.seed ^ 0x4469_6666);
-    let mut disagreements = Vec::new();
-
-    for _ in 0..budget.differential {
-        let mission = Mission::draw_busy(&mut rng, contract);
-        if !mission.is_valid(contract) {
-            return Err(format!(
-                "the generator built an invalid mission: {}",
-                show(&mission.canonical())
-            ));
-        }
-
-        let input = mission.canonical();
-        let expected = reference::run(&mission);
-        let got = answer(implementation, &input, budget.timeout)?
-            .unwrap_or_else(|| b"<refused a valid mission>".to_vec());
-        if got != expected {
-            // The first one is reduced; see `Disagreement::reduced`.
-            let reduced = if disagreements.is_empty() {
-                Some(reduce(implementation, contract, &mission, budget.timeout)?)
-            } else {
-                None
-            };
-            disagreements.push(Disagreement {
-                mission: input,
-                expected,
-                got,
-                reduced,
-            });
-        }
-    }
-
-    Ok(disagreements)
+    Ok(smaller.mission.canonical())
 }
