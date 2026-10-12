@@ -11,12 +11,14 @@ For any project the problem statement is the human-understandble and human-creat
 | File | What it holds |
 |---|---|
 | `contract.proto` | the schema: what a contract *is*. The Rust types the suite uses are generated from it |
-| `contract.toml` | this contract's values: the version, the limits, the grammar's productions, and every question the problem statement leaves open |
+| `contract.toml` | this contract's values: the version, the limits, the grammar's productions, the semantics of the letters, and every question the problem statement leaves open |
 | `template.md` | the narrative, with holes where the facts go |
 
 The schema is the shape and the instance is the content, so neither restates the other. Nothing hand-writes the contract's Rust types: `build.rs` compiles the schema with `protox` and generates them with `prost-build`, which means a field added to the schema appears in the suite without anybody writing it twice, and a field removed stops compiling. A consumer in any language `protoc` targets generates its own types from the same schema.
 
 The instance stays TOML and stays authored by hand, because the rulings are prose that people read and argue over in diffs, and no binary or comment-free format supports that. The schema is what makes a misspelled key an error instead of a silently missing value.
+
+The semantics are the part a grammar cannot hold: where the world's lower-left corner is, the step each orientation takes, what each command does, and how a robot's final position is written. They are in the schema because the problem statement states them and because an implementation that derives them cannot disagree with the contract about which way north is — and because a command type added here is then a command type the implementation cannot silently ignore. The letters live there too, next to their meanings, so the grammar's `orientation` and `instruction` productions are rendered from the semantics rather than listing the same letters twice.
 
 The limits are defined once and read everywhere: by the document, by the suite's boundary cases, and by an implementation that derives its constants from them. The grammar is productions rather than text, so the EBNF a reader sees is rendered from the same data the generators draw their terminals from — there is no grammar file to keep in step, and the characters the grammar does not admit are exactly what the rejection generator injects. To read the contract as a single, coherent document:
 
@@ -28,7 +30,9 @@ That rendering is written to stdout rather than to a tracked file to avoid needi
 
 ## Ruled and open questions
 
-A question with `status = "ruled"` becomes part of the contract: an implementation that disagrees with the contract is wrong, and a test case is expected to pin the rule. A question with `status = "open"` is deliberately undecided: no case may test it, and an implementation may answer it however it likes. The difference is data rather than prose so that a tool can act on it.
+A question carrying a `ruled` decision becomes part of the contract: an implementation that disagrees with the contract is wrong, and a test case is expected to pin the rule. A question carrying an `open` decision is deliberately undecided: no case may test it, and an implementation may answer it however it likes.
+
+The difference is structural rather than prose, so a tool can act on it. The schema makes the decision a `oneof`, which is why a question cannot be both ruled and open, and why there is no `status` field to get wrong — the shape of a ruling is the statement that it has been ruled.
 
 ## Getting it
 
@@ -78,10 +82,9 @@ result: <n> case(s) run, <n> passed, <n> failed
 spelling: <n> mission(s) x <n> rendering(s), seed <n>, <n> divergence(s), <n> refused
 properties: <n> mission(s), seed <n>, <n> violation(s)
 rejections: <n> of <n> attempted, seed <n>, <n> failure(s)
-differential: <n> mission(s), seed <n>, <n> disagreement(s)
 ```
 
-A case is a fixed input and the output the contract expects of it. Each case records which rulings it enforces, and tests refuse citations to questions that do not exist or are still open. Cases ask for what the contract fixes: a rejection must produce no stdout and some diagnostic, with any non-zero exit; a diagnostic must indicate the line where it is attributable; help output must exist. The four lines after `result:` are generators, which supply input for the tests. Three of them produce valid missions, one invalid: `--spelling` requires the same answer to one mission written several legal ways, `--properties` checks statements that must hold of any correct answer, and `--differential` compares against a second implementation written from the same contract. The fourth, `--rejections`, produces invalid input instead, where the question is whether it is refused with a diagnostic somebody can act on.
+A case is a fixed input and the output the contract expects of it. Each case records which rulings it enforces, and tests refuse citations to questions that do not exist or are still open. Cases ask for what the contract fixes: a rejection must produce no stdout and some diagnostic, with any non-zero exit; a diagnostic must indicate the line where it is attributable; help output must exist. The three lines after `result:` are generators, which supply input the catalogue does not hold. Two of them produce valid missions: `--spelling` requires the same answer to one mission written several legal ways, and `--properties` checks statements that must hold of any correct answer. The third, `--rejections`, produces invalid input instead, where the question is whether it is refused with a diagnostic somebody can act on. None of them needs to know the right answer in advance, which is the constraint that shapes all three. A fourth that did was removed; see below for why, and for when it would be worth having.
 
 The generator seed is fixed by default so two runs of the same code grade the same corpus. The seed is documented in `tests/corpus.rs`. `--seed random` draws a wider corpus and prints the seed it chose, which replays through `--seed <n>`. In CI the fixed seed is the gate; a scheduled random run finds the next case worth adding.
 
@@ -106,7 +109,10 @@ This generator checks statements that must hold of any correct answer, printing 
       no two robots are lost on the same cell
       the same input twice gives the same answer
       appending a robot does not change the robots before it
+      running a robot's instructions in two halves ends where running them whole does
 ```
+
+The last of those is the one that says anything about a *mixed* instruction string. Six of the others constrain shape rather than meaning, and the two that constrain meaning exclude any string containing both a turn and an `F` — so a program wrong only about where a robot ends up would otherwise agree with itself across every respelling and pass. Splitting one robot's instructions at a point, running each half, and requiring the halves to end where the whole did needs no second implementation to judge: the state at the seam is the same state. It is skipped when the first half loses the robot, because a loss ends the run and leaves a scent the split cannot reproduce.
 
 ### Rejections
 
@@ -118,13 +124,11 @@ rejections: <n> of <n> attempted, seed <n>, <n> failure(s)
 
 The expected line and the admissible rulings come from how the mutation was built rather than from what the implementation said, so an implementation cannot teach the suite to accept its own answer. Every mutation is checked against the published grammar to be genuinely invalid before it is used.
 
-### Differential
+## Differential testing, and why there is none here
 
-This generator compares answers with a second implementation written from the same contract:
+Differential testing compares two implementations of the same specification and treats any difference as a finding. It is how compiler bugs are found at scale, how database engines are fuzzed, and how a migration is de-risked when old and new systems run side by side on the same traffic. Its strength comes from two implementations being independent of each other, showcasing how the same specification is interpreted differently, introducing different failure patterns. It is overkill in a project of this scope and size, but would be worth introducing when a second implementation exists, as it allows for a smooth transition from a legacy system to a new one.
 
-```
-differential: <n> mission(s), seed <n>, <n> disagreement(s)
-```
+A weaker version of the idea is still present in this suite in the spelling generator which compares a program with itself across legal respellings; the invariants compare an answer against statements that must hold of any correct one. Both are cheaper than a second implementation and more productive for the current scope.
 
 | Exit code | Meaning |
 |---|---|

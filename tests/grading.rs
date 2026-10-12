@@ -74,16 +74,7 @@ impl Report {
 fn grade(implementation: &Path) -> Report {
     grade_with(
         implementation,
-        &[
-            "--spelling",
-            "0",
-            "--properties",
-            "0",
-            "--rejections",
-            "0",
-            "--differential",
-            "0",
-        ],
+        &["--spelling", "0", "--properties", "0", "--rejections", "0"],
     )
 }
 
@@ -282,12 +273,19 @@ fn an_implementation_that_answers_differently_each_run_is_caught() {
 #[test]
 fn every_invariant_is_evaluated_by_the_corpus_it_runs_against() {
     let fixtures = Fixtures::new("firing");
-    // Answers, and answers with a loss: several predicates say nothing about
-    // an implementation that reports nothing, and a corpus cannot evaluate
-    // "no two robots are lost on the same cell" against a program that never
-    // loses one.
-    let implementation =
-        fixtures.implementation("always-lost", "cat > /dev/null\nprintf '0 0 N LOST\\n'");
+    // A conforming program, because the question is whether the *corpus*
+    // reaches every predicate — and only a program that answers properly lets
+    // them all apply. A fixture that reports a loss for everything makes some
+    // of them fire and others impossible: a split run cannot continue past a
+    // loss, so the decomposition predicate would be inapplicable by
+    // construction rather than by the corpus being thin.
+    let implementation = fixtures.implementation(
+        "conforming",
+        &format!(
+            "exec {} \"$@\"",
+            Path::new(env!("CARGO_BIN_EXE_probe")).display()
+        ),
+    );
 
     let report = grade_with(
         &implementation,
@@ -373,8 +371,7 @@ fn an_implementation_that_is_wrong_in_a_way_nothing_else_sees_is_caught() {
     let fixtures = Fixtures::new("plausible");
     // Shaped right, self-consistent, and wrong: one well-formed line, on any
     // grid, whatever the instructions say. Every respelling agrees with every
-    // other, and only a second implementation can say the answer is not the
-    // mission's.
+    // other, so nothing that compares a program with itself can see it.
     let implementation = fixtures.implementation("plausible", "cat > /dev/null\nprintf '0 0 N\\n'");
 
     let report = grade_with(
@@ -382,19 +379,38 @@ fn an_implementation_that_is_wrong_in_a_way_nothing_else_sees_is_caught() {
         &[
             "--spelling",
             "0",
-            "--properties",
-            "0",
             "--rejections",
             "0",
-            "--differential",
+            "--properties",
             "40",
             "--seed",
             "8",
         ],
     );
+    // This fixture is wrong about everything: one constant line whatever the
+    // mission. The invariants catch that easily, and this test says only that.
+    //
+    // It does not say the invariants cover what the removed differential mode
+    // covered — they do not. A defect that answers the right number of lines,
+    // in the right shape, and is wrong only about where a robot ended up is
+    // invisible to every predicate here, because only two of them constrain
+    // meaning at all and both exclude mixed instruction strings. The mode was
+    // removed as overkill at this scope, not as redundant.
     assert!(
-        report.stdout.contains("DISAGREES with the reference"),
-        "the differential must catch a wrong answer nothing else sees:\n{}",
+        report.stdout.contains("VIOLATED one line per robot"),
+        "an answer with the wrong number of lines must be caught:\n{}",
+        report.stdout
+    );
+    assert!(
+        report
+            .stdout
+            .contains("VIOLATED a robot that cannot move reports where it started"),
+        "an answer that moves a robot that cannot move must be caught:\n{}",
+        report.stdout
+    );
+    assert!(
+        report.stdout.contains("reduced to"),
+        "the first violation must be reduced before it is reported:\n{}",
         report.stdout
     );
     assert!(!report.conformed);
@@ -419,8 +435,6 @@ fn an_implementation_that_refuses_everything_cannot_pass_the_spelling_mode() {
             "--properties",
             "0",
             "--rejections",
-            "0",
-            "--differential",
             "0",
             "--seed",
             "1",
@@ -448,8 +462,6 @@ fn a_formatting_defect_is_reported_as_a_formatting_defect() {
             "--properties",
             "10",
             "--rejections",
-            "0",
-            "--differential",
             "0",
             "--seed",
             "1",
@@ -479,16 +491,7 @@ fn a_diagnostic_that_always_blames_one_line_is_caught() {
 
     let report = grade_with(
         &implementation,
-        &[
-            "--spelling",
-            "0",
-            "--properties",
-            "0",
-            "--rejections",
-            "0",
-            "--differential",
-            "0",
-        ],
+        &["--spelling", "0", "--properties", "0", "--rejections", "0"],
     );
     assert!(
         report
@@ -514,8 +517,6 @@ fn a_program_built_to_conform_passes_everything() {
             "--properties",
             "30",
             "--rejections",
-            "30",
-            "--differential",
             "30",
             "--seed",
             "1",
@@ -578,8 +579,6 @@ fn a_parser_that_swallows_blank_lines_is_caught_by_the_framing_mutations() {
             "--spelling",
             "0",
             "--properties",
-            "0",
-            "--differential",
             "0",
             "--rejections",
             "60",
@@ -808,8 +807,6 @@ fn the_invariants_are_asked_of_respelled_input_as_well_as_canonical() {
             "0",
             "--rejections",
             "0",
-            "--differential",
-            "0",
             "--properties",
             "20",
             "--seed",
@@ -871,8 +868,6 @@ fn an_implementation_that_answers_only_the_first_few_robots_is_caught() {
             "0",
             "--rejections",
             "0",
-            "--differential",
-            "0",
             "--properties",
             "40",
             "--seed",
@@ -887,13 +882,12 @@ fn an_implementation_that_answers_only_the_first_few_robots_is_caught() {
 }
 
 #[test]
-fn a_disagreement_is_reported_small_enough_to_read() {
+fn a_violation_is_reported_small_enough_to_read() {
     let fixtures = Fixtures::new("truncating");
     // A wrapper that cuts every line to fifteen characters, which is a real
     // defect shape: a fixed buffer, or a read that stops at a length nobody
-    // chose on purpose. It answers short missions correctly, so the
-    // disagreement it produces is a long one, and a long one is exactly what
-    // nobody can debug.
+    // chose. It answers short missions correctly, so the violations it
+    // produces come from long ones — and a long one is what nobody can debug.
     let implementation = fixtures.implementation(
         "truncating",
         &format!(
@@ -907,49 +901,30 @@ fn a_disagreement_is_reported_small_enough_to_read() {
         &[
             "--spelling",
             "0",
-            "--properties",
-            "0",
             "--rejections",
             "0",
-            "--differential",
-            "20",
+            "--properties",
+            "40",
             "--seed",
             "41",
         ],
     );
 
-    let mut lines = report
+    let reduced = report
         .stdout
         .lines()
-        .skip_while(|line| !line.starts_with("DISAGREES"));
-    let drawn = lines
-        .find(|line| line.trim_start().starts_with("mission:"))
-        .expect("a disagreement to be found at all")
-        .to_string();
-    let reduced_at = lines
-        .find(|line| line.trim_start().starts_with("reduced in"))
-        .map(ToString::to_string)
-        .expect("the first disagreement to be reduced");
-    let reduced = lines
-        .find(|line| line.trim_start().starts_with("mission:"))
-        .expect("the reduction to name a mission")
-        .to_string();
+        .find(|line| line.trim_start().starts_with("reduced to"))
+        .expect("the first violation to be reduced");
+    let drawn = report
+        .stdout
+        .lines()
+        .find(|line| line.trim_start().starts_with("on "))
+        .expect("the violation to name what it was drawn from");
 
     assert!(
-        reduced.len() < drawn.len() / 2,
-        "a reduction that barely reduces is not worth the processes it costs\n\
+        reduced.len() < drawn.len(),
+        "a reduction that does not reduce is not worth the processes it costs\n  \
          drawn:   {drawn}\n  reduced: {reduced}"
-    );
-    assert!(
-        !reduced_at.contains("budget ran out"),
-        "a defect this simple should reduce all the way: {reduced_at}"
-    );
-    // One robot, one instruction line, and the truncation boundary still in
-    // it: the smallest input that can show a sixteenth character going missing.
-    assert!(
-        reduced.contains("\\n") && reduced.matches("\\n").count() == 3,
-        "the reduction should be a grid line, one robot and its instructions: \
-         {reduced}"
     );
 }
 
@@ -1070,8 +1045,6 @@ fn a_mode_that_judged_nothing_is_the_suite_failing_and_not_the_program_passing()
             "0",
             "--properties",
             "0",
-            "--differential",
-            "0",
             "--seed",
             "2",
         ])
@@ -1112,8 +1085,6 @@ fn a_reader_whose_whitespace_came_from_its_language_is_caught() {
             "--spelling",
             "0",
             "--properties",
-            "0",
-            "--differential",
             "0",
             "--rejections",
             "300",
@@ -1180,8 +1151,6 @@ fn an_implementation_that_reports_only_its_first_problem_is_caught() {
             "0",
             "--properties",
             "0",
-            "--differential",
-            "0",
             "--rejections",
             "400",
         ],
@@ -1229,8 +1198,6 @@ fn a_decoder_that_accepts_an_overlong_encoding_is_caught() {
             "0",
             "--properties",
             "0",
-            "--differential",
-            "0",
             "--rejections",
             "400",
         ],
@@ -1243,5 +1210,90 @@ fn a_decoder_that_accepts_an_overlong_encoding_is_caught() {
         "the taxonomy must catch it over a wider space than two hand cases \
          can:\n{}",
         generated.stdout
+    );
+}
+
+/// Which invariant catches which misreading of §2.2.
+///
+/// The near-miss gallery already asserts which *cases* each wrong program
+/// fails. This asserts the same of the *predicates*, and it is the test whose
+/// absence made removing the differential generator a guess: without it,
+/// "the oracle-free checks cover that class" was an argument rather than a
+/// measurement. A defect no predicate catches is a hole in the battery, and
+/// the only way to know is to make one and look.
+const SEMANTIC_DEFECTS: [(&str, &str); 7] = [
+    // Shifts a surviving robot when its instruction string is long and mixes
+    // turns with movement — the shape of a fixed buffer. Invisible to every
+    // single-answer predicate, because the two that constrain meaning exclude
+    // mixed strings. This is the one the decomposition predicate exists for.
+    (
+        "long-strings",
+        "running a robot's instructions in two halves ends where running them whole does",
+    ),
+    // A world with an upper edge and no lower one.
+    (
+        "no-lower-edge",
+        "a robot that only moves forward stops where the world stops it",
+    ),
+    // A scent that remembers the heading it was left facing.
+    ("direction-scent", "no two robots are lost on the same cell"),
+    // A scent spent on the robot it saves.
+    ("scent-consumed", "no two robots are lost on the same cell"),
+    // One scent remembered, not a set of them.
+    ("one-scent", "no two robots are lost on the same cell"),
+    // A lost robot that keeps running its instructions.
+    (
+        "keep-simulating",
+        "a robot that only moves forward stops where the world stops it",
+    ),
+    // A scent looked up only where a robot was placed.
+    (
+        "scent-at-start",
+        "a robot that only moves forward stops where the world stops it",
+    ),
+];
+
+#[test]
+fn every_misreading_of_the_semantics_is_caught_by_a_named_invariant() {
+    let fixtures = Fixtures::new("semantic-defects");
+    let gallery = Path::new(env!("CARGO_BIN_EXE_misbehave"))
+        .display()
+        .to_string();
+
+    for (defect, predicate) in SEMANTIC_DEFECTS {
+        let implementation =
+            fixtures.implementation(defect, &format!("MISBEHAVE={defect} exec {gallery}"));
+        let report = grade_with(
+            &implementation,
+            &["--spelling", "0", "--rejections", "0", "--properties", "80"],
+        );
+        assert!(
+            report
+                .stdout
+                .lines()
+                .any(|line| line.starts_with("VIOLATED") && line.contains(predicate)),
+            "{defect:?} must be caught by {predicate:?}, and was not:\n{}",
+            report.stdout
+        );
+    }
+}
+
+#[test]
+fn a_defect_no_invariant_catches_is_owned_by_a_case_instead() {
+    // `stop-on-ignore` — a blocked move that ends the run rather than being
+    // skipped — escapes every predicate. That is not a hole: the catalogue
+    // owns it, and the scent matrix above asserts which case fails it. The
+    // point of writing it down is that the battery's coverage is known rather
+    // than assumed.
+    let caught_by_a_predicate: Vec<&str> = SEMANTIC_DEFECTS.iter().map(|(d, _)| *d).collect();
+    assert!(
+        !caught_by_a_predicate.contains(&"stop-on-ignore"),
+        "if an invariant now catches it, add it to the table above"
+    );
+    assert!(
+        NEAR_MISSES
+            .iter()
+            .any(|(defect, cases)| *defect == "stop-on-ignore" && !cases.is_empty()),
+        "a defect no predicate catches must be owned by a case"
     );
 }

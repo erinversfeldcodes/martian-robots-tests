@@ -77,3 +77,52 @@ fn every_predicate_the_readme_lists_is_a_predicate() {
         );
     }
 }
+
+#[test]
+fn the_rendered_contract_names_no_file_that_is_not_there() {
+    // Three normative sentences named `grammar.ebnf` and `limits.toml` for two
+    // releases after those files were deleted. The schema validates keys and
+    // treats the prose as opaque strings, and the prose is where this
+    // contract's substance lives — so the one thing it cannot check is the
+    // one thing that went stale.
+    let contract = Contract::load().expect("a coherent contract");
+    let rendered = contract.render().expect("the contract to render");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+
+    // Everything above the revision history. A history describes the past, so
+    // a row that names the file it retired is correct and must stay sayable.
+    let document = rendered
+        .split_once("## 5. Revision history")
+        .map_or(rendered.as_str(), |(before, _)| before);
+
+    let mut checked = 0;
+    for mention in document.split('`').skip(1).step_by(2) {
+        let looks_like_a_path = mention.contains('/') || mention.contains('.');
+        if !looks_like_a_path || mention.contains(' ') || mention.contains('{') {
+            continue;
+        }
+        let Some(stem) = mention.split('/').next_back() else {
+            continue;
+        };
+        if !stem.contains('.') || stem.starts_with('.') {
+            continue;
+        }
+        // Only names that look like files this repository would hold.
+        if !["toml", "proto", "ebnf", "md", "rs", "input", "output"]
+            .contains(&stem.rsplit('.').next().unwrap_or(""))
+        {
+            continue;
+        }
+        let relative = mention.strip_prefix("contract/").unwrap_or(mention);
+        assert!(
+            root.join(mention).exists() || root.join("contract").join(relative).exists(),
+            "the contract names {mention}, which does not exist"
+        );
+        checked += 1;
+    }
+
+    assert!(
+        checked > 0,
+        "no file is named, so this test watches nothing"
+    );
+}

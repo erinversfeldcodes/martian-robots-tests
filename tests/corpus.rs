@@ -111,20 +111,20 @@ fn the_mutations_a_seed_names() {
 }
 
 const EXPECTED_MISSIONS: [&str; 12] = [
-    "2x2 W0 W0 E2 E7 W7 E4 E87",
-    "5x1 E36",
-    "2x5 N1 W7 N21 S0 N4 W3 W2",
-    "50x38 N7 W48 N99 W4 S3 W48 N95 S6 W5 W4",
-    "2x50 W1 E1 N4 E35",
-    "46x39 E6 S6 S7",
-    "3x25 N52 S0 S2 E3 S1 W99 N4 E4",
-    "0x3 E1 E99 W95 S0 E14",
+    "2x2 W0 W0 S2 S7 W7 S4 S87",
+    "5x1 S36",
+    "2x5 N1 W7 N21 E0 N4 W3 W2",
+    "50x38 N7 W48 N99 W4 E3 W48 N95 E6 W5 W4",
+    "2x50 W1 S1 N4 S35",
+    "46x39 S6 E6 E7",
+    "3x25 N52 E0 E2 S3 E1 W99 N4 S4",
+    "0x3 S1 S99 W95 E0 S14",
     "5x0 W3",
-    "4x3 E5 W5 E4 N99 E70",
-    "50x12 N8 N2 S7 E4 W2 S4 S5 S68 S7",
-    "1x2 W80 S99 N7 S84 E5 S97 E82 N5 E99 S5 E0 N4",
+    "4x3 S5 W5 S4 N99 S70",
+    "50x12 N8 N2 E7 S4 W2 E4 E5 E68 E7",
+    "1x2 W80 E99 N7 E84 S5 E97 S82 N5 S99 E5 S0 N4",
 ];
-const EXPECTED_MISSION_DIGEST: &str = "2721281322b62b2b";
+const EXPECTED_MISSION_DIGEST: &str = "538e0785c1ae9b15";
 const EXPECTED_SPELLINGS: [&str; 8] = [
     "lf/eol/pre1/runsst,ts,s,s/lead4/trail4/zeros1/sep2/emptyblank",
     "crlf/eol/pre2/runsst,t,t,st/lead3/trail3/zeros1/sep1/wsblank",
@@ -148,4 +148,4 @@ const EXPECTED_MUTATIONS: [&str; 10] = [
     "a separator the grammar does not have",
     "a foreign separator, leading, on an instruction line",
 ];
-const EXPECTED_MUTATION_DIGEST: &str = "1989f21088b4d2ea";
+const EXPECTED_MUTATION_DIGEST: &str = "01680cbf12ed7b1a";

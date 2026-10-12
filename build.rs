@@ -24,6 +24,10 @@ fn main() {
             "martian_robots.contract.Ruling.decision",
             "#[serde(rename_all = \"snake_case\")]",
         )
+        .type_attribute(
+            "martian_robots.contract.Command.effect",
+            "#[serde(rename_all = \"snake_case\")]",
+        )
         // Only the fields that are genuinely optional get a default. Every
         // other field stays required, so a missing `ruling` is a load error
         // rather than an empty string nobody notices — which is what the

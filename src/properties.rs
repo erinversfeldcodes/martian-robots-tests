@@ -1,4 +1,13 @@
+use crate::contract::Contract;
 use crate::mission::{Mission, Robot};
+
+// This module used to carry its own compass — a fifth copy of the same four
+// facts, from the same reading of the same document as the probe's. It now
+// reads the step from the contract's semantics, which removes the copy. That
+// does not make the check self-confirming: nothing under test derives its
+// movement from here, and the problem statement's published sample is a
+// normative case, so a wrong entry in the data fails that case rather than
+// passing unnoticed.
 
 pub const NAMES: [&str; 6] = [
     // Not "in input order": counting lines cannot see an order. Order is
@@ -27,7 +36,20 @@ struct Reported {
     lost: bool,
 }
 
-pub fn check(mission: &Mission, stdout: &[u8]) -> Vec<Verdict> {
+/// The step an orientation takes, from the contract's semantics.
+///
+/// `(0, 0)` for a letter the contract does not know, which no mission can
+/// carry: the grammar admits exactly the letters the semantics describe.
+fn step_of(contract: &Contract, facing: char) -> (i32, i32) {
+    contract
+        .semantics
+        .orientations
+        .iter()
+        .find(|orientation| orientation.letter.starts_with(facing))
+        .map_or((0, 0), |orientation| (orientation.dx, orientation.dy))
+}
+
+pub fn check(mission: &Mission, stdout: &[u8], contract: &Contract) -> Vec<Verdict> {
     let reports = match parse(stdout) {
         Ok(reports) => reports,
         Err(why) => {
@@ -50,7 +72,7 @@ pub fn check(mission: &Mission, stdout: &[u8]) -> Vec<Verdict> {
         Verdict::Held,
         on_the_grid(mission, &reports),
         cannot_move(mission, &reports),
-        only_forward(mission, &reports),
+        only_forward(mission, &reports, contract),
         no_two_losses_on_one_cell(&reports),
     ]
 }
@@ -155,45 +177,90 @@ fn cannot_move(mission: &Mission, reports: &[Reported]) -> Verdict {
     }
 }
 
-/// The first robot runs on a world with no scents in it, so an instruction
-/// string of nothing but `F` has exactly one answer: it walks until the world
-/// stops it, and is lost the step after that
-fn only_forward(mission: &Mission, reports: &[Reported]) -> Verdict {
-    let (Some(robot), Some(report)) = (mission.robots.first(), reports.first()) else {
-        return Verdict::NotApplicable;
-    };
-    if robot.instructions.is_empty() || robot.instructions.chars().any(|step| step != 'F') {
-        return Verdict::NotApplicable;
+/// An instruction string of nothing but `F` has one answer, for every robot
+/// and not only the first.
+///
+/// A robot walks until the world stops it. Scent cannot interfere on the way,
+/// because a scent only ignores a *world-leaving* move — so the distance
+/// travelled is `min(steps, room)` whatever happened earlier. At the edge
+/// there are exactly two outcomes: it is lost, or the move was ignored, and a
+/// move is ignored only from a cell some earlier robot was lost on. That
+/// second case is what used to restrict this predicate to `robots.first()`,
+/// and stating it is what lifts the restriction.
+///
+/// The escape clause is itself a check: a program that reports a survivor at
+/// an edge it should have walked off has to point at an earlier loss on that
+/// exact cell, and cannot.
+fn only_forward(mission: &Mission, reports: &[Reported], contract: &Contract) -> Verdict {
+    let mut applied = false;
+
+    for (at, (robot, report)) in mission.robots.iter().zip(reports).enumerate() {
+        if robot.instructions.is_empty() || robot.instructions.chars().any(|step| step != 'F') {
+            continue;
+        }
+        applied = true;
+
+        let (dx, dy) = step_of(contract, robot.facing);
+        let steps = u32::try_from(robot.instructions.len()).unwrap_or(u32::MAX);
+        let room = match (dx, dy) {
+            (0, 1) => mission.max_y - robot.y,
+            (0, -1) => robot.y,
+            (1, 0) => mission.max_x - robot.x,
+            (-1, 0) => robot.x,
+            _ => return Verdict::NotApplicable,
+        };
+        let travelled = steps.min(room);
+        let x = robot
+            .x
+            .wrapping_add_signed(dx * i32::try_from(travelled).unwrap_or(0));
+        let y = robot
+            .y
+            .wrapping_add_signed(dy * i32::try_from(travelled).unwrap_or(0));
+
+        if report.x != x || report.y != y || report.facing != robot.facing {
+            return Verdict::Violated(format!(
+                "robot {} at {} {} {} with {steps} step(s) forward on {} {}: expected ({x}, {y}) \
+                 facing {}, got ({}, {}) facing {}",
+                at + 1,
+                robot.x,
+                robot.y,
+                robot.facing,
+                mission.max_x,
+                mission.max_y,
+                robot.facing,
+                report.x,
+                report.y,
+                report.facing
+            ));
+        }
+
+        if steps <= room {
+            // It never reached the edge, so there is nothing more to say.
+            continue;
+        }
+
+        if report.lost {
+            continue;
+        }
+
+        // It reached the edge, kept walking, and survived. Only a scent can
+        // do that, and only an earlier loss on this very cell leaves one.
+        let scented_earlier = reports[..at]
+            .iter()
+            .any(|earlier| earlier.lost && earlier.x == x && earlier.y == y);
+        if !scented_earlier {
+            return Verdict::Violated(format!(
+                "robot {} walked off ({x}, {y}) and was not lost, but no earlier robot was lost \
+                 there to scent it",
+                at + 1
+            ));
+        }
     }
 
-    let steps = u32::try_from(robot.instructions.len()).unwrap_or(u32::MAX);
-    let room = match robot.facing {
-        'N' => mission.max_y - robot.y,
-        'S' => robot.y,
-        'E' => mission.max_x - robot.x,
-        _ => robot.x,
-    };
-    let travelled = steps.min(room);
-    let (x, y) = match robot.facing {
-        'N' => (robot.x, robot.y + travelled),
-        'S' => (robot.x, robot.y - travelled),
-        'E' => (robot.x + travelled, robot.y),
-        _ => (robot.x - travelled, robot.y),
-    };
-    let expected = Reported {
-        x,
-        y,
-        facing: robot.facing,
-        lost: steps > room,
-    };
-
-    if *report == expected {
+    if applied {
         Verdict::Held
     } else {
-        Verdict::Violated(format!(
-            "{} {} {} with {} step(s) forward on {} {}: expected {expected:?}, got {report:?}",
-            robot.x, robot.y, robot.facing, steps, mission.max_x, mission.max_y
-        ))
+        Verdict::NotApplicable
     }
 }
 
@@ -233,7 +300,7 @@ fn turned(robot: &Robot) -> char {
 
 #[cfg(test)]
 mod tests {
-    use super::{NAMES, Verdict, check};
+    use super::{Contract, NAMES, Verdict, check};
     use crate::mission::{Mission, Robot};
 
     fn mission(max_x: u32, max_y: u32, robots: &[(u32, u32, char, &str)]) -> Mission {
@@ -253,7 +320,8 @@ mod tests {
     }
 
     fn violations(mission: &Mission, stdout: &[u8]) -> Vec<String> {
-        check(mission, stdout)
+        let contract = Contract::load().expect("a coherent contract");
+        check(mission, stdout, &contract)
             .into_iter()
             .zip(NAMES)
             .filter_map(|(verdict, name)| match verdict {
@@ -353,7 +421,8 @@ mod tests {
     #[test]
     fn a_property_a_mission_says_nothing_about_does_not_count_as_passing() {
         let mission = mission(5, 3, &[(1, 1, 'E', "RFRFRFRF")]);
-        let verdicts = check(&mission, b"1 1 E\n");
+        let contract = Contract::load().expect("a coherent contract");
+        let verdicts = check(&mission, b"1 1 E\n", &contract);
         assert_eq!(verdicts[5], Verdict::NotApplicable, "nothing was lost");
         assert_eq!(verdicts[3], Verdict::NotApplicable, "the robot could move");
     }

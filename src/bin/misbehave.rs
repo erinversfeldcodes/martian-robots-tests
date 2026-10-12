@@ -113,6 +113,13 @@ fn fold_whitespace(input: Vec<u8>, defect: &str) -> Vec<u8> {
 
 /// §2.2, with one thing wrong.
 fn run(mission: &Mission, defect: &str) -> String {
+    // Shifts a surviving robot one cell east when its instruction string is
+    // long enough, which is the shape of a fixed buffer or a read that stops
+    // at a length nobody chose. Self-consistent across respellings,
+    // deterministic, prefix-stable, on the grid — invisible to every
+    // single-answer predicate, and the reason the decomposition one exists.
+    let long_strings = defect == "long-strings";
+
     // A scent is a cell. One defect remembers the heading with it, which is
     // why the heading is stored at all.
     let mut scented: Vec<(u32, u32, char)> = Vec::new();
@@ -164,6 +171,19 @@ fn run(mission: &Mission, defect: &str) -> String {
                 }
                 _ => {}
             }
+        }
+
+        // Mixed strings only, which is exactly the gap: `cannot_move` needs a
+        // string with no `F`, and the forward predicate needs one that is all
+        // `F`, so a defect confined to strings containing both is invisible
+        // to every single-answer check.
+        let mixed = robot.instructions.contains('F')
+            && robot
+                .instructions
+                .chars()
+                .any(|step| step == 'L' || step == 'R');
+        if long_strings && !lost && mixed && robot.instructions.len() >= 10 && x < mission.max_x {
+            x += 1;
         }
 
         let _ = writeln!(
